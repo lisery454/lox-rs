@@ -1,0 +1,10 @@
+[package]
+name = "lox-lang"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+colored = "3.1.1"
+strum_macros = "0.28.0"
+thiserror = "2.0.18"
