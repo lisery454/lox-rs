@@ -27,79 +27,79 @@ impl Display for LiteralValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssignExprData {
     pub(crate) name: Token,
     pub(crate) value: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryExprData {
     pub(crate) operator: Token,
     pub(crate) left: Box<Expr>,
     pub(crate) right: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallExprData {
     pub(crate) operator: Token,
     pub(crate) callee: Box<Expr>,
     pub(crate) arguments: Vec<Box<Expr>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GetExprData {
     pub(crate) name: Token,
     pub(crate) object: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GroupingExprData {
     pub(crate) expression: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LiteralExprData {
     pub(crate) value: LiteralValue,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogicalExprData {
     pub(crate) left: Box<Expr>,
     pub(crate) right: Box<Expr>,
     pub(crate) operator: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SetExprData {
     pub(crate) name: Token,
     pub(crate) object: Box<Expr>,
     pub(crate) value: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SuperExprData {
     pub(crate) keyword: Token,
     pub(crate) method: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThisExprData {
     pub(crate) keyword: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryExprData {
     pub(crate) operator: Token,
     pub(crate) right: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VariableExprData {
     pub(crate) name: Token,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Assign(AssignExprData),
     Binary(BinaryExprData),
@@ -219,157 +219,5 @@ impl Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.render(f, 0)
-    }
-}
-
-impl Expr {
-    pub fn interpret(&self) -> Result<LiteralValue> {
-        match self {
-            Expr::Assign(_assign_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Binary(binary_expr_data) => {
-                let left_value = binary_expr_data.left.interpret()?;
-                let right_value = binary_expr_data.right.interpret()?;
-                match binary_expr_data.operator.typ {
-                    TokenType::Minus => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Number(l - r));
-                        }
-                    }
-                    TokenType::Plus => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Number(l + r));
-                        } else if let LiteralValue::String(l) = left_value
-                            && let LiteralValue::String(r) = right_value
-                        {
-                            return Ok(LiteralValue::String(format!("{}{}", l, r)));
-                        }
-                    }
-                    TokenType::Slash => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Number(l / r));
-                        }
-                    }
-                    TokenType::Star => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Number(l * r));
-                        }
-                    }
-                    TokenType::Greater => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l > r));
-                        }
-                    }
-                    TokenType::GreaterEqual => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l >= r));
-                        }
-                    }
-                    TokenType::Less => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l < r));
-                        }
-                    }
-                    TokenType::LessEqual => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l <= r));
-                        }
-                    }
-                    TokenType::EqualEqual => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l == r));
-                        } else if let LiteralValue::String(l) = &left_value
-                            && let LiteralValue::String(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l == r));
-                        } else if let LiteralValue::Bool(l) = &left_value
-                            && let LiteralValue::Bool(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l == r));
-                        } else if let LiteralValue::Nil = &left_value
-                            && let LiteralValue::Nil = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(true));
-                        }
-                    }
-                    TokenType::BangEqual => {
-                        if let LiteralValue::Number(l) = &left_value
-                            && let LiteralValue::Number(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l != r));
-                        } else if let LiteralValue::String(l) = &left_value
-                            && let LiteralValue::String(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l != r));
-                        } else if let LiteralValue::Bool(l) = &left_value
-                            && let LiteralValue::Bool(r) = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(l != r));
-                        } else if let LiteralValue::Nil = &left_value
-                            && let LiteralValue::Nil = &right_value
-                        {
-                            return Ok(LiteralValue::Bool(false));
-                        }
-                    }
-                    _ => {}
-                }
-                Err(LoxError::InterpretError {
-                    message: format!(
-                        "calc binary expr fail. line: {}. lexeme: {}",
-                        binary_expr_data.operator.line, binary_expr_data.operator.lexeme
-                    ),
-                }
-                .into())
-            }
-            Expr::Call(_call_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Get(_get_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Grouping(grouping_expr_data) => grouping_expr_data.expression.interpret(),
-            Expr::Literal(literal_expr_data) => Ok(literal_expr_data.value.clone()),
-            Expr::Logical(_logical_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Set(_set_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Super(_super_expr_data) => Ok(LiteralValue::Nil),
-            Expr::This(_this_expr_data) => Ok(LiteralValue::Nil),
-            Expr::Unary(unary_expr_data) => {
-                let right_value = unary_expr_data.right.interpret()?;
-                match unary_expr_data.operator.typ {
-                    TokenType::Minus => {
-                        if let LiteralValue::Number(n) = &right_value {
-                            return Ok(LiteralValue::Number(-n));
-                        }
-                    }
-                    TokenType::Bang => {
-                        if let LiteralValue::Bool(n) = &right_value {
-                            return Ok(LiteralValue::Bool(!n));
-                        }
-                    }
-                    _ => {}
-                }
-                Err(LoxError::InterpretError {
-                    message: format!(
-                        "calc unary expr fail. line: {}. lexeme: {}",
-                        unary_expr_data.operator.line, unary_expr_data.operator.lexeme
-                    ),
-                }
-                .into())
-            }
-            Expr::Variable(_variable_expr_data) => Ok(LiteralValue::Nil),
-        }
     }
 }

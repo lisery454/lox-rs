@@ -3,51 +3,61 @@ use super::{
     token::Token,
 };
 
+#[derive(Debug, Clone)]
 pub struct BlockStmtData {
-    statements: Vec<Box<Stmt>>,
+    pub(crate) statements: Vec<Box<Stmt>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ClassStmtData {
-    name: Token,
-    superclass: VariableExprData,
-    methods: Vec<FunctionStmtData>,
+    pub(crate) name: Token,
+    pub(crate) superclass: VariableExprData,
+    pub(crate) methods: Vec<FunctionStmtData>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ExpressionStmtData {
-    expression: Expr,
+    pub(crate) expression: Expr,
 }
 
+#[derive(Debug, Clone)]
 pub struct FunctionStmtData {
-    name: Token,
-    params: Vec<Token>,
-    body: Vec<Box<Stmt>>,
+    pub(crate) name: Token,
+    pub(crate) params: Vec<Token>,
+    pub(crate) body: Vec<Box<Stmt>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct IfStmtData {
-    consition: Expr,
-    then_branch: Box<Stmt>,
-    else_branch: Box<Stmt>,
+    pub(crate) consition: Expr,
+    pub(crate) then_branch: Box<Stmt>,
+    pub(crate) else_branch: Box<Stmt>,
 }
 
+#[derive(Debug, Clone)]
 pub struct PrintStmtData {
-    expression: Expr,
+    pub(crate) expression: Expr,
 }
 
+#[derive(Debug, Clone)]
 pub struct ReturnStmtData {
-    keyword: Token,
-    value: Expr,
+    pub(crate) keyword: Token,
+    pub(crate) value: Expr,
 }
 
+#[derive(Debug, Clone)]
 pub struct VariableStmtData {
-    name: Token,
-    initializer: Expr,
+    pub(crate) name: Token,
+    pub(crate) initializer: Expr,
 }
 
+#[derive(Debug, Clone)]
 pub struct WhileStmtData {
-    condition: Expr,
-    body: Box<Stmt>,
+    pub(crate) condition: Expr,
+    pub(crate) body: Box<Stmt>,
 }
 
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Block(BlockStmtData),
     Class(ClassStmtData),

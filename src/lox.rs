@@ -4,7 +4,7 @@ use std::{
     io::{self, BufRead, Write},
 };
 
-use crate::{parser::Parser, scanner::Scanner};
+use crate::{interpreter::Interpreter, parser::Parser, scanner::Scanner};
 
 pub struct Lox {}
 
@@ -51,17 +51,20 @@ impl Lox {
         let mut scanner = Scanner::new(code);
         let tokens = scanner.scan_tokens()?;
 
-        // For now, just print the tokens.
-        for token in tokens {
-            println!("{}", token);
-        }
+        // for token in tokens {
+        //     println!("{}", token);
+        // }
 
         let mut parser = Parser::new(tokens);
+        let stats = parser.parse()?;
 
-        if let Some(expr) = parser.parse() {
-            println!("{}", expr);
+        // for stmt in &stats {
+        //     println!("{:?}", stmt);
+        // }
 
-            println!("the result of expr is {}", expr.interpret()?);
+        let mut interpreter = Interpreter::new();
+        for stmt in &stats {
+            interpreter.interpret(stmt)?;
         }
 
         Ok(())

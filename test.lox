@@ -1,1 +1,7 @@
- "hello" + ", world"
+var a = 1;
+var b = 2;
+b = a + b;
+a = b - a;
+b = b - a;
+print "a: " + a;
+print "b: " + b;
