@@ -218,7 +218,33 @@ impl Interpreter {
             Expr::Get(_data) => Ok(LiteralValue::Nil),
             Expr::Grouping(data) => self.interpret_expr(&data.expression),
             Expr::Literal(data) => Ok(data.value.clone()),
-            Expr::Logical(_data) => Ok(LiteralValue::Nil),
+            Expr::Logical(data) => {
+                let left = self.interpret_expr(&data.left)?;
+                match data.operator.typ {
+                    TokenType::Or => {
+                        if left.is_truthy() {
+                            return Ok(left);
+                        }
+                    }
+                    TokenType::And => {
+                        if !left.is_truthy() {
+                            return Ok(left);
+                        }
+                    }
+                    _ => {
+                        return Err(LoxError::InterpretError {
+                            message: format!(
+                                "invalid logical op. line: {}. lexeme: {}",
+                                data.operator.line, data.operator.lexeme
+                            ),
+                        }
+                        .into());
+                    }
+                }
+
+                let right = self.interpret_expr(&data.right)?;
+                Ok(right)
+            }
             Expr::Set(_data) => Ok(LiteralValue::Nil),
             Expr::Super(_data) => Ok(LiteralValue::Nil),
             Expr::This(_data) => Ok(LiteralValue::Nil),

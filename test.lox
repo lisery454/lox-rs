@@ -1,9 +1,4 @@
-var a = 2;
-var b = 2;
-if (a > b) {
-    print "a > b";
-} else if (a < b) {
-    print "a < b";
-} else {
-    print "a == b";
+var b = 78;
+if (100 > b and b > 50 or false) {
+    print "hello";
 }

@@ -165,11 +165,11 @@ impl Parser {
     /// common_experssion -> equality | assign
     /// assign -> equality '=' equality
     fn parse_assignment(&mut self) -> Result<Expr> {
-        let expr = self.parse_equality()?;
+        let expr = self.parse_logic_or()?;
 
         if self.match_advance(|t| matches!(t, TokenType::Equal)) {
             let prev_token = format!("{}", self.previous().unwrap());
-            let value = self.parse_equality()?;
+            let value = self.parse_logic_or()?;
             if let Expr::Variable(v) = expr {
                 let name = v.name;
                 return Ok(Expr::assign(name, value));
@@ -180,6 +180,26 @@ impl Parser {
             .into());
         }
 
+        return Ok(expr);
+    }
+
+    fn parse_logic_or(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_logic_and()?;
+        if self.match_advance(|t| matches!(t, TokenType::Or)) {
+            let prev_token = self.previous().unwrap().clone();
+            let right = self.parse_logic_and()?;
+            expr = Expr::logical(prev_token, expr, right);
+        }
+        return Ok(expr);
+    }
+
+    fn parse_logic_and(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_equality()?;
+        if self.match_advance(|t| matches!(t, TokenType::And)) {
+            let prev_token = self.previous().unwrap().clone();
+            let right = self.parse_equality()?;
+            expr = Expr::logical(prev_token, expr, right);
+        }
         return Ok(expr);
     }
 
