@@ -1,11 +1,7 @@
 use crate::{
     environment::Environment,
     error::LoxError,
-    model::{
-        expr::{Expr, LiteralValue},
-        stmt::Stmt,
-        token::TokenType,
-    },
+    model::{expr::Expr, literal::LiteralValue, stmt::Stmt, token::TokenType},
 };
 
 pub struct Interpreter {
@@ -83,13 +79,11 @@ impl Interpreter {
                             && let LiteralValue::String(r) = &right_value
                         {
                             return Ok(LiteralValue::String(format!("{}{}", l, r)));
-                        }
-                        else if let LiteralValue::String(l) = &left_value
+                        } else if let LiteralValue::String(l) = &left_value
                             && let LiteralValue::Number(r) = &right_value
                         {
                             return Ok(LiteralValue::String(format!("{}{}", l, r)));
-                        }
-                        else if let LiteralValue::Number(l) = &left_value
+                        } else if let LiteralValue::Number(l) = &left_value
                             && let LiteralValue::String(r) = &right_value
                         {
                             return Ok(LiteralValue::String(format!("{}{}", l, r)));

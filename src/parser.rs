@@ -3,10 +3,8 @@ use anyhow::Result;
 use crate::{
     error::LoxError,
     model::{
-        expr::{
-            AssignExprData, BinaryExprData, Expr, GroupingExprData, LiteralExprData, LiteralValue,
-            UnaryExprData, VariableExprData,
-        },
+        expr::{Expr, LiteralExprData, UnaryExprData, VariableExprData},
+        literal::LiteralValue,
         stmt::{ExpressionStmtData, PrintStmtData, Stmt, VariableStmtData},
         token::{Token, TokenType},
     },
@@ -130,10 +128,7 @@ impl Parser {
             let value = self.parse_equality()?;
             if let Expr::Variable(v) = expr {
                 let name = v.name;
-                return Ok(Expr::Assign(AssignExprData {
-                    name,
-                    value: Box::new(value),
-                }));
+                return Ok(Expr::assign(name, value));
             }
             return Err(LoxError::ParseError {
                 message: format!("Invalid assignment target. at {:?}", prev_token),
@@ -151,11 +146,7 @@ impl Parser {
         while self.match_advance(|t| matches!(t, TokenType::BangEqual | TokenType::EqualEqual)) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_comparison()?;
-            expr = Expr::Binary(BinaryExprData {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            });
+            expr = Expr::binary(operator, expr, right);
         }
 
         Ok(expr)
@@ -176,11 +167,7 @@ impl Parser {
         }) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_term()?;
-            expr = Expr::Binary(BinaryExprData {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            });
+            expr = Expr::binary(operator, expr, right);
         }
 
         Ok(expr)
@@ -193,11 +180,7 @@ impl Parser {
         while self.match_advance(|t| matches!(t, TokenType::Plus | TokenType::Minus)) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_factor()?;
-            expr = Expr::Binary(BinaryExprData {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            });
+            expr = Expr::binary(operator, expr, right);
         }
 
         Ok(expr)
@@ -210,11 +193,7 @@ impl Parser {
         while self.match_advance(|t| matches!(t, TokenType::Slash | TokenType::Star)) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_unary()?;
-            expr = Expr::Binary(BinaryExprData {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            });
+            expr = Expr::binary(operator, expr, right);
         }
 
         Ok(expr)
@@ -226,10 +205,7 @@ impl Parser {
         if self.match_advance(|t| matches!(t, TokenType::Minus | TokenType::Bang)) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_unary()?;
-            return Ok(Expr::Unary(UnaryExprData {
-                operator,
-                right: Box::new(right),
-            }));
+            return Ok(Expr::unary(operator, right));
         }
 
         self.parse_primary()
@@ -239,45 +215,33 @@ impl Parser {
     ///             |  ( experssion )
     fn parse_primary(&mut self) -> Result<Expr> {
         if self.match_advance(|t| matches!(t, TokenType::False)) {
-            return Ok(Expr::Literal(LiteralExprData {
-                value: LiteralValue::Bool(false),
-            }));
+            return Ok(Expr::literal(false));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::True)) {
-            return Ok(Expr::Literal(LiteralExprData {
-                value: LiteralValue::Bool(true),
-            }));
+            return Ok(Expr::literal(true));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::Nil)) {
-            return Ok(Expr::Literal(LiteralExprData {
-                value: LiteralValue::Nil,
-            }));
+            return Ok(Expr::literal(()));
         }
 
         if let Some(n) = self.match_some_advance(|t| match t {
             TokenType::Number(n) => Some(n.clone()),
             _ => None,
         }) {
-            return Ok(Expr::Literal(LiteralExprData {
-                value: LiteralValue::Number(n),
-            }));
+            return Ok(Expr::literal(n));
         }
 
         if let Some(n) = self.match_some_advance(|t| match t {
             TokenType::String(n) => Some(n.clone()),
             _ => None,
         }) {
-            return Ok(Expr::Literal(LiteralExprData {
-                value: LiteralValue::String(n),
-            }));
+            return Ok(Expr::literal(n));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::Identifier(_))) {
-            return Ok(Expr::Variable(VariableExprData {
-                name: self.previous().unwrap().clone(),
-            }));
+            return Ok(Expr::variable(self.previous().unwrap().clone()));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
@@ -286,9 +250,7 @@ impl Parser {
                 |t| matches!(t, TokenType::RightBrace),
                 "not find right paren <)>",
             )?;
-            return Ok(Expr::Grouping(GroupingExprData {
-                expression: Box::new(expr),
-            }));
+            return Ok(Expr::grouping(expr));
         }
 
         return Err(LoxError::ParseError {

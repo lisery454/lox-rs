@@ -1,31 +1,8 @@
 use std::fmt::Display;
 
-use anyhow::Result;
 use colored::Colorize;
 
-use crate::{error::LoxError, model::token::TokenType};
-
-use super::token::Token;
-
-#[derive(Debug, Clone)]
-pub enum LiteralValue {
-    Number(f64),
-    String(String),
-    Bool(bool),
-    Nil,
-}
-
-impl Display for LiteralValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LiteralValue::Number(n) => write!(f, "{}", n)?,
-            LiteralValue::String(s) => write!(f, "{}", s)?,
-            LiteralValue::Bool(b) => write!(f, "{}", b)?,
-            LiteralValue::Nil => write!(f, "nil",)?,
-        }
-        Ok(())
-    }
-}
+use crate::model::{literal::LiteralValue, token::Token};
 
 #[derive(Debug, Clone)]
 pub struct AssignExprData {
@@ -113,6 +90,86 @@ pub enum Expr {
     This(ThisExprData),
     Unary(UnaryExprData),
     Variable(VariableExprData),
+}
+
+impl Expr {
+    pub fn assign(name: Token, value: Expr) -> Expr {
+        Expr::Assign(AssignExprData {
+            name,
+            value: Box::new(value),
+        })
+    }
+
+    pub fn binary(op: Token, left: Expr, right: Expr) -> Expr {
+        Expr::Binary(BinaryExprData {
+            operator: op,
+            left: Box::new(left),
+            right: Box::new(right),
+        })
+    }
+
+    pub fn call(op: Token, callee: Expr, arguments: Vec<Expr>) -> Expr {
+        Expr::Call(CallExprData {
+            operator: op,
+            callee: Box::new(callee),
+            arguments: arguments.into_iter().map(|e| Box::new(e)).collect(),
+        })
+    }
+
+    pub fn get(name: Token, object: Expr) -> Expr {
+        Expr::Get(GetExprData {
+            name,
+            object: Box::new(object),
+        })
+    }
+
+    pub fn grouping(expr: Expr) -> Expr {
+        Expr::Grouping(GroupingExprData {
+            expression: Box::new(expr),
+        })
+    }
+
+    pub fn literal<T>(v: T) -> Expr
+    where
+        T: Into<LiteralValue>,
+    {
+        Expr::Literal(LiteralExprData { value: v.into() })
+    }
+
+    pub fn logical(op: Token, left: Expr, right: Expr) -> Expr {
+        Expr::Logical(LogicalExprData {
+            left: Box::new(left),
+            right: Box::new(right),
+            operator: op,
+        })
+    }
+
+    pub fn set(name: Token, object: Expr, value: Expr) -> Expr {
+        Expr::Set(SetExprData {
+            name,
+            object: Box::new(object),
+            value: Box::new(value),
+        })
+    }
+
+    pub fn super_(keyword: Token, method: Token) -> Expr {
+        Expr::Super(SuperExprData { keyword, method })
+    }
+
+    pub fn this(keyword: Token) -> Expr {
+        Expr::This(ThisExprData { keyword })
+    }
+
+    pub fn unary(op: Token, right: Expr) -> Expr {
+        Expr::Unary(UnaryExprData {
+            right: Box::new(right),
+            operator: op,
+        })
+    }
+
+    pub fn variable(name: Token) -> Expr {
+        Expr::Variable(VariableExprData { name })
+    }
 }
 
 impl Expr {

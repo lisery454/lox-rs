@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{error::LoxError, model::expr::LiteralValue};
+use crate::{model::literal::LiteralValue};
 
 pub struct Environment {
     values: HashMap<String, LiteralValue>,
