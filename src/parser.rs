@@ -1,3 +1,5 @@
+use std::mem::discriminant;
+
 use anyhow::Result;
 
 use crate::{
@@ -83,13 +85,31 @@ impl Parser {
         }
     }
 
-    /// statement_stmt -> print_stmt | expression_stmt
+    /// statement_stmt -> print_stmt | expression_stmt | block_stmt
     fn parse_statements(&mut self) -> Result<Stmt> {
         if self.match_advance(|t| matches!(t, TokenType::Print)) {
             return self.parse_print_statements();
+        } else if self.match_advance(|t| matches!(t, TokenType::LeftBrace)) {
+            return self.parse_block_statements();
+        } else {
+            return self.parse_expression_statements();
         }
+    }
 
-        return self.parse_expression_statements();
+    // block_stmt -> '{' stmt '}'
+    fn parse_block_statements(&mut self) -> Result<Stmt> {
+        let mut stmts = Vec::new();
+
+        while !self.is_at_end() && !self.check(TokenType::RightBrace) {
+            if let Some(s) = self.parse_stmt() {
+                stmts.push(s);
+            }
+        }
+        self.consume(
+            |t| matches!(t, TokenType::RightBrace),
+            "Expect '}' after block.",
+        )?;
+        Ok(Stmt::block(stmts))
     }
 
     /// print_stmt -> 'print' experssion ';'
@@ -360,5 +380,17 @@ impl Parser {
             return None;
         }
         self.tokens.get((self.current - 1) as usize)
+    }
+
+    fn check(&self, typ: TokenType) -> bool {
+        if self.is_at_end() {
+            return false;
+        }
+        if let Some(t) = self.peek()
+            && discriminant(&t.typ) == discriminant(&typ)
+        {
+            return true;
+        }
+        return false;
     }
 }

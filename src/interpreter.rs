@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     environment::Environment,
     error::LoxError,
@@ -5,19 +7,30 @@ use crate::{
 };
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new(),
+            environment: Rc::new(RefCell::new(Environment::new())),
         }
     }
 
     pub fn interpret(&mut self, stmt: &Stmt) -> anyhow::Result<()> {
         match stmt {
-            Stmt::Block(_block_stmt_data) => Ok(()),
+            Stmt::Block(block_stmt_data) => {
+                let prev_env = self.environment.clone();
+                let new_env = Rc::new(RefCell::new(Environment::new_with_parent(&prev_env)));
+                {
+                    self.environment = new_env;
+                    for stmt in &block_stmt_data.statements {
+                        self.interpret(&stmt)?;
+                    }
+                    self.environment = prev_env;
+                }
+                Ok(())
+            }
             Stmt::Class(_class_stmt_data) => Ok(()),
             Stmt::Expression(expression_stmt_data) => {
                 self.interpret_expr(&expression_stmt_data.expression)?;
@@ -34,6 +47,7 @@ impl Interpreter {
             Stmt::Variable(variable_stmt_data) => {
                 let value = self.interpret_expr(&variable_stmt_data.initializer)?;
                 self.environment
+                    .borrow_mut()
                     .define(&variable_stmt_data.name.lexeme, value);
 
                 Ok(())
@@ -46,7 +60,10 @@ impl Interpreter {
         match expr {
             Expr::Assign(data) => {
                 let value = self.interpret_expr(&data.value)?;
-                let success = self.environment.assign(&data.name.lexeme, value);
+                let success = self
+                    .environment
+                    .borrow_mut()
+                    .assign(&data.name.lexeme, value);
                 if success {
                     Ok(LiteralValue::Nil)
                 } else {
@@ -213,7 +230,7 @@ impl Interpreter {
                 .into())
             }
             Expr::Variable(data) => {
-                let value = self.environment.get(&data.name.lexeme).clone();
+                let value = self.environment.borrow().get(&data.name.lexeme);
                 Ok(value)
             }
         }
