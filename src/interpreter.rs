@@ -37,7 +37,19 @@ impl Interpreter {
                 Ok(())
             }
             Stmt::Function(_function_stmt_data) => Ok(()),
-            Stmt::If(_if_stmt_data) => Ok(()),
+            Stmt::If(if_stmt_data) => {
+                let condition = self.interpret_expr(&if_stmt_data.condition)?;
+                if condition.is_truthy() {
+                    if let Some(then_branch) = &if_stmt_data.then_branch {
+                        self.interpret(then_branch)?;
+                    }
+                } else {
+                    if let Some(else_branch) = &if_stmt_data.else_branch {
+                        self.interpret(else_branch)?;
+                    }
+                }
+                Ok(())
+            }
             Stmt::Print(print_stmt_data) => {
                 let v = self.interpret_expr(&print_stmt_data.expression)?;
                 println!("{}", v);

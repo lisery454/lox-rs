@@ -8,6 +8,35 @@ pub enum LiteralValue {
     Nil,
 }
 
+impl LiteralValue {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            LiteralValue::Number(n) => {
+                if n.abs() > f64::EPSILON {
+                    true
+                } else {
+                    true
+                }
+            }
+            LiteralValue::String(s) => {
+                if s.len() > 0 {
+                    true
+                } else {
+                    false
+                }
+            }
+            LiteralValue::Bool(b) => {
+                if *b {
+                    true
+                } else {
+                    false
+                }
+            }
+            LiteralValue::Nil => false,
+        }
+    }
+}
+
 impl Display for LiteralValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

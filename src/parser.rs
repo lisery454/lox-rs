@@ -86,15 +86,39 @@ impl Parser {
         }
     }
 
-    /// statement_stmt -> print_stmt | expression_stmt | block_stmt
+    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt
     fn parse_statements(&mut self) -> Result<Stmt> {
         if self.match_advance(|t| matches!(t, TokenType::Print)) {
             return self.parse_print_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::LeftBrace)) {
             return self.parse_block_statements();
+        } else if self.match_advance(|t| matches!(t, TokenType::If)) {
+            return self.parse_if_statements();
         } else {
             return self.parse_expression_statements();
         }
+    }
+
+    // if_stmt -> 'if' '(' expr ')'  stmt  ('else' stmt)?
+    fn parse_if_statements(&mut self) -> Result<Stmt> {
+        self.consume(
+            |t| matches!(t, TokenType::LeftParen),
+            "Expect '(' after 'if'.",
+        )?;
+
+        let condition = self.parse_experssion()?;
+
+        self.consume(
+            |t| matches!(t, TokenType::RightParen),
+            "Expect ')' after 'if' condition.",
+        )?;
+
+        let then_branch = self.parse_stmt();
+        let mut else_branch = None;
+        if self.match_advance(|t| matches!(t, TokenType::Else)) {
+            else_branch = self.parse_stmt();
+        }
+        Ok(Stmt::if_(condition, then_branch, else_branch))
     }
 
     // block_stmt -> '{' stmt '}'

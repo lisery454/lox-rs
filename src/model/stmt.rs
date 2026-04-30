@@ -28,9 +28,9 @@ pub struct FunctionStmtData {
 
 #[derive(Debug, Clone)]
 pub struct IfStmtData {
-    pub(crate) consition: Expr,
-    pub(crate) then_branch: Box<Stmt>,
-    pub(crate) else_branch: Box<Stmt>,
+    pub(crate) condition: Expr,
+    pub(crate) then_branch: Option<Box<Stmt>>,
+    pub(crate) else_branch: Option<Box<Stmt>>,
 }
 
 #[derive(Debug, Clone)]
@@ -96,11 +96,11 @@ impl Stmt {
         })
     }
 
-    pub fn if_(consition: Expr, then_branch: Stmt, else_branch: Stmt) -> Stmt {
+    pub fn if_(condition: Expr, then_branch: Option<Stmt>, else_branch: Option<Stmt>) -> Stmt {
         Stmt::If(IfStmtData {
-            consition,
-            then_branch: Box::new(then_branch),
-            else_branch: Box::new(else_branch),
+            condition,
+            then_branch: then_branch.map(|b| Box::new(b)),
+            else_branch: else_branch.map(|b| Box::new(b)),
         })
     }
 
