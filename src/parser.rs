@@ -86,17 +86,38 @@ impl Parser {
         }
     }
 
-    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt
+    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt | while_stmt
     fn parse_statements(&mut self) -> Result<Stmt> {
         if self.match_advance(|t| matches!(t, TokenType::Print)) {
             return self.parse_print_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::LeftBrace)) {
             return self.parse_block_statements();
+        } else if self.match_advance(|t| matches!(t, TokenType::While)) {
+            return self.parse_while_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::If)) {
             return self.parse_if_statements();
         } else {
             return self.parse_expression_statements();
         }
+    }
+
+    // while_stmt -> 'while' '(' expr ')'  stmt
+    fn parse_while_statements(&mut self) -> Result<Stmt> {
+        self.consume(
+            |t| matches!(t, TokenType::LeftParen),
+            "Expect '(' after 'if'.",
+        )?;
+
+        let condition = self.parse_experssion()?;
+
+        self.consume(
+            |t| matches!(t, TokenType::RightParen),
+            "Expect ')' after 'if' condition.",
+        )?;
+
+        let body = self.parse_stmt();
+
+        Ok(Stmt::while_(condition, body))
     }
 
     // if_stmt -> 'if' '(' expr ')'  stmt  ('else' stmt)?
@@ -162,8 +183,8 @@ impl Parser {
         self.parse_assignment()
     }
 
-    /// common_experssion -> equality | assign
-    /// assign -> equality '=' equality
+    /// common_experssion -> logic_or | assign
+    /// assign -> logic_or '=' logic_or
     fn parse_assignment(&mut self) -> Result<Expr> {
         let expr = self.parse_logic_or()?;
 
@@ -183,6 +204,7 @@ impl Parser {
         return Ok(expr);
     }
 
+    /// logic_or -> logic_and ('or' logic_and)*
     fn parse_logic_or(&mut self) -> Result<Expr> {
         let mut expr = self.parse_logic_and()?;
         if self.match_advance(|t| matches!(t, TokenType::Or)) {
@@ -193,6 +215,7 @@ impl Parser {
         return Ok(expr);
     }
 
+    /// logic_and -> equality ('and' equality)*
     fn parse_logic_and(&mut self) -> Result<Expr> {
         let mut expr = self.parse_equality()?;
         if self.match_advance(|t| matches!(t, TokenType::And)) {

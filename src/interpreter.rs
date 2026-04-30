@@ -68,7 +68,14 @@ impl Interpreter {
 
                 Ok(())
             }
-            Stmt::While(_while_stmt_data) => Ok(()),
+            Stmt::While(while_stmt_data) => {
+                while self.interpret_expr(&while_stmt_data.condition)?.is_truthy() {
+                    if let Some(stmt) = &while_stmt_data.body {
+                        self.interpret(stmt)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 

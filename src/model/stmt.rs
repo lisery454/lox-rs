@@ -1,5 +1,3 @@
-use anyhow::bail;
-
 use super::{expr::Expr, token::Token};
 
 #[derive(Debug, Clone)]
@@ -53,7 +51,7 @@ pub struct VariableStmtData {
 #[derive(Debug, Clone)]
 pub struct WhileStmtData {
     pub(crate) condition: Expr,
-    pub(crate) body: Box<Stmt>,
+    pub(crate) body: Option<Box<Stmt>>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,10 +114,10 @@ impl Stmt {
         Stmt::Variable(VariableStmtData { name, initializer })
     }
 
-    pub fn while_(condition: Expr, body: Stmt) -> Stmt {
+    pub fn while_(condition: Expr, body: Option<Stmt>) -> Stmt {
         Stmt::While(WhileStmtData {
             condition,
-            body: Box::new(body),
+            body: body.map(|b| Box::new(b)),
         })
     }
 }
