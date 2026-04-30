@@ -43,7 +43,7 @@ impl Parser {
         let result = if self.match_advance(|t| matches!(t, TokenType::Var)) {
             self.parse_var_declaration()
         } else {
-            self.parse_statements()
+            self.parse_statement()
         };
 
         if let Ok(stmt) = result {
@@ -86,8 +86,8 @@ impl Parser {
         }
     }
 
-    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt | while_stmt
-    fn parse_statements(&mut self) -> Result<Stmt> {
+    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt | while_stmt | for_stmt
+    fn parse_statement(&mut self) -> Result<Stmt> {
         if self.match_advance(|t| matches!(t, TokenType::Print)) {
             return self.parse_print_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::LeftBrace)) {
@@ -96,23 +96,78 @@ impl Parser {
             return self.parse_while_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::If)) {
             return self.parse_if_statements();
+        } else if self.match_advance(|t| matches!(t, TokenType::For)) {
+            return self.parse_for_statements();
         } else {
-            return self.parse_expression_statements();
+            return self.parse_expression_statement();
         }
+    }
+
+    // for_stmt -> 'for' '('  ')'
+    fn parse_for_statements(&mut self) -> Result<Stmt> {
+        self.consume(
+            |t| matches!(t, TokenType::LeftParen),
+            "Expect '(' after 'for'.",
+        )?;
+
+        let initializer = if self.match_advance(|t| matches!(t, TokenType::Semicolon)) {
+            None
+        } else if self.match_advance(|t| matches!(t, TokenType::Var)) {
+            Some(self.parse_var_declaration()?)
+        } else {
+            Some(self.parse_expression_statement()?)
+        };
+
+        let condition = if !self.check(TokenType::Semicolon) {
+            Some(self.parse_experssion()?)
+        } else {
+            None
+        };
+        self.consume(
+            |t| matches!(t, TokenType::Semicolon),
+            "Expect ';' after for loop condition.",
+        )?;
+
+        let increment = if !self.check(TokenType::RightParen) {
+            Some(self.parse_experssion()?)
+        } else {
+            None
+        };
+        self.consume(
+            |t| matches!(t, TokenType::RightParen),
+            "Expect ')' after for loop increment.",
+        )?;
+
+        let mut body = self.parse_statement()?;
+
+        if let Some(increment) = increment {
+            body = Stmt::block(vec![body, Stmt::expression(increment)]);
+        }
+
+        if let Some(condition) = condition {
+            body = Stmt::while_(condition, Some(body))
+        } else {
+            body = Stmt::while_(Expr::literal(true), Some(body))
+        }
+
+        if let Some(initializer) = initializer {
+            body = Stmt::block(vec![initializer, body]);
+        }
+        Ok(body)
     }
 
     // while_stmt -> 'while' '(' expr ')'  stmt
     fn parse_while_statements(&mut self) -> Result<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
-            "Expect '(' after 'if'.",
+            "Expect '(' after 'while'.",
         )?;
 
         let condition = self.parse_experssion()?;
 
         self.consume(
             |t| matches!(t, TokenType::RightParen),
-            "Expect ')' after 'if' condition.",
+            "Expect ')' after 'while' condition.",
         )?;
 
         let body = self.parse_stmt();
@@ -169,7 +224,7 @@ impl Parser {
     }
 
     /// expression_stmt -> experssion ';'
-    fn parse_expression_statements(&mut self) -> Result<Stmt> {
+    fn parse_expression_statement(&mut self) -> Result<Stmt> {
         let expr = self.parse_experssion()?;
         self.consume(
             |t| matches!(t, TokenType::Semicolon),
