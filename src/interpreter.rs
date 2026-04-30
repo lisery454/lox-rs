@@ -45,7 +45,11 @@ impl Interpreter {
             }
             Stmt::Return(_return_stmt_data) => Ok(()),
             Stmt::Variable(variable_stmt_data) => {
-                let value = self.interpret_expr(&variable_stmt_data.initializer)?;
+                let value = if let Some(initializer) = &variable_stmt_data.initializer {
+                    self.interpret_expr(initializer)?
+                } else {
+                    LiteralValue::Nil
+                };
                 self.environment
                     .borrow_mut()
                     .define(&variable_stmt_data.name.lexeme, value);

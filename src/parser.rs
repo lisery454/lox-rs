@@ -70,12 +70,13 @@ impl Parser {
                     |t| matches!(t, TokenType::Semicolon),
                     "Expect ';' after variable declaration.",
                 )?;
-                return Ok(Stmt::variable(name, initializer));
+                return Ok(Stmt::variable(name, Some(initializer)));
             } else {
-                return Err(LoxError::ParseError {
-                    message: format!("Expect '=' after variable identifier."),
-                }
-                .into());
+                self.consume(
+                    |t| matches!(t, TokenType::Semicolon),
+                    "Expect ';' after variable declaration.",
+                )?;
+                return Ok(Stmt::variable(name, None));
             }
         } else {
             return Err(LoxError::ParseError {

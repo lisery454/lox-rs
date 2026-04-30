@@ -47,7 +47,7 @@ pub struct ReturnStmtData {
 #[derive(Debug, Clone)]
 pub struct VariableStmtData {
     pub(crate) name: Token,
-    pub(crate) initializer: Expr,
+    pub(crate) initializer: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +112,7 @@ impl Stmt {
         Stmt::Return(ReturnStmtData { keyword, value })
     }
 
-    pub fn variable(name: Token, initializer: Expr) -> Stmt {
+    pub fn variable(name: Token, initializer: Option<Expr>) -> Stmt {
         Stmt::Variable(VariableStmtData { name, initializer })
     }
 
