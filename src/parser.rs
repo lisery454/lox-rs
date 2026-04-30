@@ -3,14 +3,13 @@ use anyhow::Result;
 use crate::{
     error::LoxError,
     model::{
-        expr::{Expr, LiteralExprData, UnaryExprData, VariableExprData},
-        literal::LiteralValue,
-        stmt::{ExpressionStmtData, PrintStmtData, Stmt, VariableStmtData},
+        expr::Expr,
+        stmt::Stmt,
         token::{Token, TokenType},
     },
 };
 
-/// Tokens -> Expr
+/// Tokens -> Expr -> Stmt
 pub struct Parser {
     tokens: Vec<Token>,
     current: u64,
@@ -69,7 +68,7 @@ impl Parser {
                     |t| matches!(t, TokenType::Semicolon),
                     "Expect ';' after variable declaration.",
                 )?;
-                return Ok(Stmt::Variable(VariableStmtData { name, initializer }));
+                return Ok(Stmt::variable(name, initializer));
             } else {
                 return Err(LoxError::ParseError {
                     message: format!("Expect '=' after variable identifier."),
@@ -100,7 +99,7 @@ impl Parser {
             |t| matches!(t, TokenType::Semicolon),
             "Expect ';' after value (print).",
         )?;
-        return Ok(Stmt::Print(PrintStmtData { expression: expr }));
+        return Ok(Stmt::print(expr));
     }
 
     /// expression_stmt -> experssion ';'
@@ -110,7 +109,7 @@ impl Parser {
             |t| matches!(t, TokenType::Semicolon),
             "Expect ';' after value (expr).",
         )?;
-        return Ok(Stmt::Expression(ExpressionStmtData { expression: expr }));
+        return Ok(Stmt::expression(expr));
     }
 
     /// experssion -> common_experssion

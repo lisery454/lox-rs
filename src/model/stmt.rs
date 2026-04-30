@@ -1,7 +1,6 @@
-use super::{
-    expr::{Expr, VariableExprData},
-    token::Token,
-};
+use anyhow::bail;
+
+use super::{expr::Expr, token::Token};
 
 #[derive(Debug, Clone)]
 pub struct BlockStmtData {
@@ -11,8 +10,8 @@ pub struct BlockStmtData {
 #[derive(Debug, Clone)]
 pub struct ClassStmtData {
     pub(crate) name: Token,
-    pub(crate) superclass: VariableExprData,
-    pub(crate) methods: Vec<FunctionStmtData>,
+    pub(crate) superclass: Expr,        // variable
+    pub(crate) methods: Vec<Box<Stmt>>, // func
 }
 
 #[derive(Debug, Clone)]
@@ -68,4 +67,59 @@ pub enum Stmt {
     Return(ReturnStmtData),
     Variable(VariableStmtData),
     While(WhileStmtData),
+}
+
+impl Stmt {
+    pub fn block(stmts: Vec<Stmt>) -> Stmt {
+        Stmt::Block(BlockStmtData {
+            statements: stmts.into_iter().map(|s| Box::new(s)).collect(),
+        })
+    }
+
+    pub fn class(class_name: Token, super_class: Expr, methods: Vec<Stmt>) -> Stmt {
+        Stmt::Class(ClassStmtData {
+            name: class_name,
+            superclass: super_class,
+            methods: methods.into_iter().map(|e| Box::new(e)).collect(),
+        })
+    }
+
+    pub fn expression(expression: Expr) -> Stmt {
+        Stmt::Expression(ExpressionStmtData { expression })
+    }
+
+    pub fn function(name: Token, params: Vec<Token>, body: Vec<Stmt>) -> Stmt {
+        Stmt::Function(FunctionStmtData {
+            name,
+            params,
+            body: body.into_iter().map(|e| Box::new(e)).collect(),
+        })
+    }
+
+    pub fn if_(consition: Expr, then_branch: Stmt, else_branch: Stmt) -> Stmt {
+        Stmt::If(IfStmtData {
+            consition,
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+        })
+    }
+
+    pub fn print(expression: Expr) -> Stmt {
+        Stmt::Print(PrintStmtData { expression })
+    }
+
+    pub fn return_(keyword: Token, value: Expr) -> Stmt {
+        Stmt::Return(ReturnStmtData { keyword, value })
+    }
+
+    pub fn variable(name: Token, initializer: Expr) -> Stmt {
+        Stmt::Variable(VariableStmtData { name, initializer })
+    }
+
+    pub fn while_(condition: Expr, body: Stmt) -> Stmt {
+        Stmt::While(WhileStmtData {
+            condition,
+            body: Box::new(body),
+        })
+    }
 }
