@@ -108,7 +108,10 @@ impl Scanner {
                         }
 
                         if self.is_at_end() {
-                            return Err(LoxError::UnterminatedString { line: self.line }.into());
+                            return Err(LoxError::ScanError {
+                                message: format!("unterminated string, line: {}", self.line),
+                            }
+                            .into());
                         }
 
                         self.advance_char(); // must be '"'
@@ -144,7 +147,9 @@ impl Scanner {
                                 .iter()
                                 .collect::<String>()
                                 .parse::<f64>()
-                                .map_err(|_| LoxError::InvalidNumberFormat { line: self.line })?,
+                                .map_err(|_| LoxError::ScanError {
+                                    message: format!("invalid number format, line: {}", self.line),
+                                })?,
                         ));
                     }
                     n if n.is_ascii_alphabetic() || *n == '_' => {
@@ -167,11 +172,19 @@ impl Scanner {
                     '\r' => {}
                     '\t' => {}
                     '\n' => self.line += 1,
-                    _ => return Err(LoxError::UnexpectedChar { line: self.line }.into()),
+                    _ => {
+                        return Err(LoxError::ScanError {
+                            message: format!("unexpected character, line: {}", self.line),
+                        }
+                        .into());
+                    }
                 };
                 Ok(())
             }
-            None => Err(LoxError::ReadCharNotFound.into()),
+            None => Err(LoxError::ScanError {
+                message: "not found char".into(),
+            }
+            .into()),
         }
     }
 
