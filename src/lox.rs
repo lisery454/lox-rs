@@ -1,10 +1,9 @@
-use anyhow::Result;
 use std::{
     fs,
     io::{self, BufRead, Write},
 };
 
-use crate::{interpreter::Interpreter, parser::Parser, scanner::Scanner};
+use crate::{error::LoxResult, interpreter::Interpreter, parser::Parser, scanner::Scanner};
 
 pub struct Lox {}
 
@@ -13,13 +12,13 @@ impl Lox {
         return Self {};
     }
 
-    pub fn run_file(&mut self, path: &String) -> Result<()> {
+    pub fn run_file(&mut self, path: &String) -> LoxResult<()> {
         let code = fs::read_to_string(path)?;
         self.run(&code)?;
         Ok(())
     }
 
-    pub fn run_prompt(&mut self) -> Result<()> {
+    pub fn run_prompt(&mut self) -> LoxResult<()> {
         let stdin = io::stdin();
         let mut handle = stdin.lock();
 
@@ -45,7 +44,7 @@ impl Lox {
         Ok(())
     }
 
-    fn run(&mut self, code: &String) -> Result<()> {
+    fn run(&mut self, code: &String) -> LoxResult<()> {
         // println!("{:?}", code);
 
         let mut scanner = Scanner::new(code);

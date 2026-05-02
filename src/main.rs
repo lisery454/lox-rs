@@ -1,16 +1,15 @@
+mod environment;
 mod error;
+mod interpreter;
 mod lox;
-mod scanner;
 mod model;
 mod parser;
-mod environment;
-mod interpreter;
+mod scanner;
 
+use crate::{error::LoxResult, lox::Lox};
 use std::{env, process};
-use anyhow::{Ok, Result};
-use crate::lox::Lox;
 
-fn main() -> Result<()> {
+fn main() -> LoxResult<()> {
     let args: Vec<String> = env::args().collect();
     let mut lox = Lox::new();
     if args.len() > 2 {

@@ -4,10 +4,10 @@ use std::{
     rc::Rc,
 };
 
-use crate::environment::Environment;
+use crate::{environment::Environment, error::LoxResult};
 
 type NativeFunction =
-    Rc<dyn Fn(Rc<RefCell<Environment>>, Vec<LiteralValue>) -> anyhow::Result<LiteralValue>>;
+    Rc<dyn Fn(Rc<RefCell<Environment>>, Vec<LiteralValue>) -> LoxResult<LiteralValue>>;
 
 #[derive(Clone)]
 pub enum LiteralValue {
@@ -17,6 +17,7 @@ pub enum LiteralValue {
     Callable {
         function: NativeFunction,
         arg_size: usize,
+        closure: Rc<RefCell<Environment>>,
     },
     Nil,
 }
@@ -61,6 +62,7 @@ impl LiteralValue {
             }
             LiteralValue::Nil => false,
             LiteralValue::Callable {
+                closure: _closure,
                 arg_size: _arg_size,
                 function: _function,
             } => true,
@@ -76,6 +78,7 @@ impl Display for LiteralValue {
             LiteralValue::Bool(b) => write!(f, "{}", b)?,
             LiteralValue::Nil => write!(f, "nil",)?,
             LiteralValue::Callable {
+                closure: _closure,
                 arg_size: _arg_size,
                 function: _function,
             } => write!(f, "callable",)?,

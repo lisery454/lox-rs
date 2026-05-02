@@ -1,7 +1,5 @@
-use anyhow::{Ok, Result};
-
 use crate::{
-    error::LoxError,
+    error::{LoxError, LoxResult},
     model::token::{KEYWORDS, Token, TokenType},
 };
 
@@ -24,7 +22,7 @@ impl Scanner {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&Vec<Token>> {
+    pub fn scan_tokens(&mut self) -> LoxResult<&Vec<Token>> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token()?;
@@ -39,7 +37,7 @@ impl Scanner {
         return self.current >= self.source.len() as u32;
     }
 
-    fn scan_token(&mut self) -> Result<()> {
+    fn scan_token(&mut self) -> LoxResult<()> {
         let c = self.advance_char();
         match c {
             Some(c) => {

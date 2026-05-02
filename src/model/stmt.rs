@@ -39,7 +39,7 @@ pub struct PrintStmtData {
 #[derive(Debug, Clone)]
 pub struct ReturnStmtData {
     pub(crate) keyword: Token,
-    pub(crate) value: Expr,
+    pub(crate) value: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,7 +106,7 @@ impl Stmt {
         Stmt::Print(PrintStmtData { expression })
     }
 
-    pub fn return_(keyword: Token, value: Expr) -> Stmt {
+    pub fn return_(keyword: Token, value: Option<Expr>) -> Stmt {
         Stmt::Return(ReturnStmtData { keyword, value })
     }
 

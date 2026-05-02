@@ -1,9 +1,7 @@
 use std::mem::discriminant;
 
-use anyhow::Result;
-
 use crate::{
-    error::LoxError,
+    error::{LoxError, LoxResult},
     model::{
         expr::Expr,
         stmt::Stmt,
@@ -26,7 +24,7 @@ impl Parser {
     }
 
     /// program -> stmt*
-    pub fn parse(&mut self) -> Result<Vec<Stmt>> {
+    pub fn parse(&mut self) -> LoxResult<Vec<Stmt>> {
         let mut stmts = Vec::new();
 
         while !self.is_at_end() {
@@ -59,7 +57,7 @@ impl Parser {
 
     /// fun_declaration_stmt -> 'fun' identifier '(' parameters? ')' block
     /// parameters     → identifier ( ',' identifier )* ;
-    fn parse_fun_declaration(&mut self, kind: &str) -> Result<Stmt> {
+    fn parse_fun_declaration(&mut self, kind: &str) -> LoxResult<Stmt> {
         let name = self
             .consume(|t| matches!(t, TokenType::Identifier(_)), "")?
             .clone();
@@ -108,8 +106,8 @@ impl Parser {
         Ok(Stmt::function(name, params, body))
     }
 
-    /// var_declaration_stmt -> 'var' identifier '=' experssion
-    fn parse_var_declaration(&mut self) -> Result<Stmt> {
+    /// var_declaration_stmt -> 'var' identifier '=' expression
+    fn parse_var_declaration(&mut self) -> LoxResult<Stmt> {
         let identifier = self.consume(
             |t| matches!(t, TokenType::Identifier(_)),
             "Expect variable name.",
@@ -117,7 +115,7 @@ impl Parser {
 
         let name = identifier.clone();
         if self.match_advance(|t| matches!(t, TokenType::Equal)) {
-            let initializer = self.parse_experssion()?;
+            let initializer = self.parse_expression()?;
             self.consume(
                 |t| matches!(t, TokenType::Semicolon),
                 "Expect ';' after variable declaration.",
@@ -132,8 +130,8 @@ impl Parser {
         }
     }
 
-    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt | while_stmt | for_stmt
-    fn parse_statement(&mut self) -> Result<Stmt> {
+    /// statement_stmt -> print_stmt | expression_stmt | block_stmt | if_stmt | while_stmt | for_stmt | return_stmt
+    fn parse_statement(&mut self) -> LoxResult<Stmt> {
         if self.match_advance(|t| matches!(t, TokenType::Print)) {
             return self.parse_print_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::LeftBrace)) {
@@ -144,13 +142,28 @@ impl Parser {
             return self.parse_if_statements();
         } else if self.match_advance(|t| matches!(t, TokenType::For)) {
             return self.parse_for_statements();
+        } else if self.match_advance(|t| matches!(t, TokenType::Return)) {
+            return self.parse_return_statements();
         } else {
             return self.parse_expression_statement();
         }
     }
 
+    fn parse_return_statements(&mut self) -> LoxResult<Stmt> {
+        let keyword = self.previous().unwrap().clone();
+        let mut value = None;
+        if !self.check(TokenType::Semicolon) {
+            value = Some(self.parse_expression()?);
+        }
+        self.consume(
+            |t| matches!(t, TokenType::Semicolon),
+            "Expect ';' after return value.",
+        )?;
+        Ok(Stmt::return_(keyword, value))
+    }
+
     // for_stmt -> 'for' '('  ')'
-    fn parse_for_statements(&mut self) -> Result<Stmt> {
+    fn parse_for_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
             "Expect '(' after 'for'.",
@@ -165,7 +178,7 @@ impl Parser {
         };
 
         let condition = if !self.check(TokenType::Semicolon) {
-            Some(self.parse_experssion()?)
+            Some(self.parse_expression()?)
         } else {
             None
         };
@@ -175,7 +188,7 @@ impl Parser {
         )?;
 
         let increment = if !self.check(TokenType::RightParen) {
-            Some(self.parse_experssion()?)
+            Some(self.parse_expression()?)
         } else {
             None
         };
@@ -203,13 +216,13 @@ impl Parser {
     }
 
     // while_stmt -> 'while' '(' expr ')'  stmt
-    fn parse_while_statements(&mut self) -> Result<Stmt> {
+    fn parse_while_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
             "Expect '(' after 'while'.",
         )?;
 
-        let condition = self.parse_experssion()?;
+        let condition = self.parse_expression()?;
 
         self.consume(
             |t| matches!(t, TokenType::RightParen),
@@ -222,13 +235,13 @@ impl Parser {
     }
 
     // if_stmt -> 'if' '(' expr ')'  stmt  ('else' stmt)?
-    fn parse_if_statements(&mut self) -> Result<Stmt> {
+    fn parse_if_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
             "Expect '(' after 'if'.",
         )?;
 
-        let condition = self.parse_experssion()?;
+        let condition = self.parse_expression()?;
 
         self.consume(
             |t| matches!(t, TokenType::RightParen),
@@ -244,7 +257,7 @@ impl Parser {
     }
 
     // block_stmt -> '{' stmt '}'
-    fn parse_block_statements(&mut self) -> Result<Stmt> {
+    fn parse_block_statements(&mut self) -> LoxResult<Stmt> {
         let mut stmts = Vec::new();
 
         while !self.is_at_end() && !self.check(TokenType::RightBrace) {
@@ -259,9 +272,9 @@ impl Parser {
         Ok(Stmt::block(stmts))
     }
 
-    /// print_stmt -> 'print' experssion ';'
-    fn parse_print_statements(&mut self) -> Result<Stmt> {
-        let expr = self.parse_experssion()?;
+    /// print_stmt -> 'print' expression ';'
+    fn parse_print_statements(&mut self) -> LoxResult<Stmt> {
+        let expr = self.parse_expression()?;
         self.consume(
             |t| matches!(t, TokenType::Semicolon),
             "Expect ';' after value (print).",
@@ -269,9 +282,9 @@ impl Parser {
         return Ok(Stmt::print(expr));
     }
 
-    /// expression_stmt -> experssion ';'
-    fn parse_expression_statement(&mut self) -> Result<Stmt> {
-        let expr = self.parse_experssion()?;
+    /// expression_stmt -> expression ';'
+    fn parse_expression_statement(&mut self) -> LoxResult<Stmt> {
+        let expr = self.parse_expression()?;
         self.consume(
             |t| matches!(t, TokenType::Semicolon),
             "Expect ';' after value (expr).",
@@ -279,14 +292,14 @@ impl Parser {
         return Ok(Stmt::expression(expr));
     }
 
-    /// experssion -> common_experssion
-    fn parse_experssion(&mut self) -> Result<Expr> {
+    /// expression -> common_expression
+    fn parse_expression(&mut self) -> LoxResult<Expr> {
         self.parse_assignment()
     }
 
-    /// common_experssion -> logic_or | assign
+    /// common_expression -> logic_or | assign
     /// assign -> logic_or '=' logic_or
-    fn parse_assignment(&mut self) -> Result<Expr> {
+    fn parse_assignment(&mut self) -> LoxResult<Expr> {
         let expr = self.parse_logic_or()?;
 
         if self.match_advance(|t| matches!(t, TokenType::Equal)) {
@@ -306,7 +319,7 @@ impl Parser {
     }
 
     /// logic_or -> logic_and ('or' logic_and)*
-    fn parse_logic_or(&mut self) -> Result<Expr> {
+    fn parse_logic_or(&mut self) -> LoxResult<Expr> {
         let mut expr = self.parse_logic_and()?;
         if self.match_advance(|t| matches!(t, TokenType::Or)) {
             let prev_token = self.previous().unwrap().clone();
@@ -317,7 +330,7 @@ impl Parser {
     }
 
     /// logic_and -> equality ('and' equality)*
-    fn parse_logic_and(&mut self) -> Result<Expr> {
+    fn parse_logic_and(&mut self) -> LoxResult<Expr> {
         let mut expr = self.parse_equality()?;
         if self.match_advance(|t| matches!(t, TokenType::And)) {
             let prev_token = self.previous().unwrap().clone();
@@ -328,7 +341,7 @@ impl Parser {
     }
 
     /// equality -> comparison (('!=' | '==') comparison)*
-    fn parse_equality(&mut self) -> Result<Expr> {
+    fn parse_equality(&mut self) -> LoxResult<Expr> {
         let mut expr: Expr = self.parse_comparison()?;
 
         while self.match_advance(|t| matches!(t, TokenType::BangEqual | TokenType::EqualEqual)) {
@@ -341,7 +354,7 @@ impl Parser {
     }
 
     /// comparison -> term (('>' | '>=' | '<' | '<=') term)*
-    fn parse_comparison(&mut self) -> Result<Expr> {
+    fn parse_comparison(&mut self) -> LoxResult<Expr> {
         let mut expr = self.parse_term()?;
 
         while self.match_advance(|t| {
@@ -362,7 +375,7 @@ impl Parser {
     }
 
     /// term -> factor (('+' | '-') factor)*
-    fn parse_term(&mut self) -> Result<Expr> {
+    fn parse_term(&mut self) -> LoxResult<Expr> {
         let mut expr = self.parse_factor()?;
 
         while self.match_advance(|t| matches!(t, TokenType::Plus | TokenType::Minus)) {
@@ -375,7 +388,7 @@ impl Parser {
     }
 
     /// factor -> unary (('*' | '/') unary)*
-    fn parse_factor(&mut self) -> Result<Expr> {
+    fn parse_factor(&mut self) -> LoxResult<Expr> {
         let mut expr = self.parse_unary()?;
 
         while self.match_advance(|t| matches!(t, TokenType::Slash | TokenType::Star)) {
@@ -389,7 +402,7 @@ impl Parser {
 
     /// unary -> ('-' | '!') unary
     ///            | call
-    fn parse_unary(&mut self) -> Result<Expr> {
+    fn parse_unary(&mut self) -> LoxResult<Expr> {
         if self.match_advance(|t| matches!(t, TokenType::Minus | TokenType::Bang)) {
             let operator = (*self.previous().unwrap()).clone();
             let right = self.parse_unary()?;
@@ -401,13 +414,13 @@ impl Parser {
 
     /// call -> primary ( '('  arguments ')' )*
     /// arguments -> expression (',' expression)*
-    fn parse_call(&mut self) -> Result<Expr> {
+    fn parse_call(&mut self) -> LoxResult<Expr> {
         let mut callee = self.parse_primary()?;
         while self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
             let mut arguments = Vec::new();
             if !self.check(TokenType::RightParen) {
                 loop {
-                    arguments.push(self.parse_experssion()?);
+                    arguments.push(self.parse_expression()?);
 
                     if !self.match_advance(|t| matches!(t, TokenType::Comma)) {
                         break;
@@ -433,8 +446,8 @@ impl Parser {
     }
 
     /// primary -> false | true | nil | number | string | identifier
-    ///             |  ( experssion )
-    fn parse_primary(&mut self) -> Result<Expr> {
+    ///             |  ( expression )
+    fn parse_primary(&mut self) -> LoxResult<Expr> {
         if self.match_advance(|t| matches!(t, TokenType::False)) {
             return Ok(Expr::literal(false));
         }
@@ -466,7 +479,7 @@ impl Parser {
         }
 
         if self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
-            let expr = self.parse_experssion()?;
+            let expr = self.parse_expression()?;
             self.consume(
                 |t| matches!(t, TokenType::RightBrace),
                 "not find right paren <)>",
@@ -510,7 +523,7 @@ impl Parser {
         }
     }
 
-    fn consume<F, S>(&mut self, f: F, message: S) -> Result<&Token>
+    fn consume<F, S>(&mut self, f: F, message: S) -> LoxResult<&Token>
     where
         F: FnOnce(&TokenType) -> bool,
         S: AsRef<str>,
