@@ -38,10 +38,12 @@ impl Parser {
         Ok(stmts)
     }
 
-    /// stmt -> declaration_stmt | statement_stmt
+    /// stmt -> var_declaration_stmt | statement_stmt | fun_declaration_stmt
     fn parse_stmt(&mut self) -> Option<Stmt> {
         let result = if self.match_advance(|t| matches!(t, TokenType::Var)) {
             self.parse_var_declaration()
+        } else if self.match_advance(|t| matches!(t, TokenType::Function)) {
+            self.parse_fun_declaration("function")
         } else {
             self.parse_statement()
         };
@@ -55,7 +57,58 @@ impl Parser {
         }
     }
 
-    /// declaration_stmt -> 'var' identifier '=' experssion
+    /// fun_declaration_stmt -> 'fun' identifier '(' parameters? ')' block
+    /// parameters     → identifier ( ',' identifier )* ;
+    fn parse_fun_declaration(&mut self, kind: &str) -> Result<Stmt> {
+        let name = self
+            .consume(|t| matches!(t, TokenType::Identifier(_)), "")?
+            .clone();
+
+        self.consume(
+            |t| matches!(t, TokenType::LeftParen),
+            format!("Expect '(' after {} name.", kind),
+        )?;
+
+        let mut params = Vec::new();
+
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if params.len() > 255 {
+                    return Err(LoxError::ParseError {
+                        message: "Can't have more than 255 parameters.".to_string(),
+                    }
+                    .into());
+                }
+
+                params.push(
+                    self.consume(
+                        |t| matches!(t, TokenType::Identifier(_)),
+                        "Expect parameter name.",
+                    )?
+                    .clone(),
+                );
+
+                if !self.match_advance(|t| matches!(t, TokenType::Comma)) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(
+            |t| matches!(t, TokenType::RightParen),
+            format!("Expect ')' after parameters."),
+        )?;
+
+        self.consume(
+            |t| matches!(t, TokenType::LeftBrace),
+            format!("Expect '{{' before {} body.", kind),
+        )?;
+
+        let body = self.parse_block_statements()?;
+        Ok(Stmt::function(name, params, body))
+    }
+
+    /// var_declaration_stmt -> 'var' identifier '=' experssion
     fn parse_var_declaration(&mut self) -> Result<Stmt> {
         let identifier = self.consume(
             |t| matches!(t, TokenType::Identifier(_)),
@@ -457,9 +510,10 @@ impl Parser {
         }
     }
 
-    fn consume<F>(&mut self, f: F, message: &str) -> Result<&Token>
+    fn consume<F, S>(&mut self, f: F, message: S) -> Result<&Token>
     where
         F: FnOnce(&TokenType) -> bool,
+        S: AsRef<str>,
     {
         if let Some(t) = self.peek()
             && f(&t.typ)
@@ -468,9 +522,9 @@ impl Parser {
         }
 
         let message = if let Some(t) = self.previous() {
-            format!("{} at line {}", message, t.line)
+            format!("{} at line {}", message.as_ref(), t.line)
         } else {
-            format!("{}", message)
+            format!("{}", message.as_ref())
         };
         return Err(LoxError::ParseError { message }.into());
     }

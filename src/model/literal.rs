@@ -1,10 +1,15 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{self, Display},
+    rc::Rc,
+};
 
 use crate::environment::Environment;
 
-type NativeFunction = fn(Rc<RefCell<Environment>>, Vec<LiteralValue>) -> LiteralValue;
+type NativeFunction =
+    Rc<dyn Fn(Rc<RefCell<Environment>>, Vec<LiteralValue>) -> anyhow::Result<LiteralValue>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum LiteralValue {
     Number(f64),
     String(String),
@@ -14,6 +19,20 @@ pub enum LiteralValue {
         arg_size: usize,
     },
     Nil,
+}
+
+impl fmt::Debug for LiteralValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LiteralValue::Number(n) => write!(f, "Number({})", n),
+            LiteralValue::String(s) => write!(f, "String({:?})", s),
+            LiteralValue::Bool(b) => write!(f, "Bool({})", b),
+            LiteralValue::Nil => write!(f, "Nil"),
+            LiteralValue::Callable { arg_size, .. } => {
+                write!(f, "<native fn ({} args)>", arg_size)
+            }
+        }
+    }
 }
 
 impl LiteralValue {

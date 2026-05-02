@@ -21,7 +21,7 @@ pub struct ExpressionStmtData {
 pub struct FunctionStmtData {
     pub(crate) name: Token,
     pub(crate) params: Vec<Token>,
-    pub(crate) body: Vec<Box<Stmt>>,
+    pub(crate) body: Box<Stmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,11 +86,11 @@ impl Stmt {
         Stmt::Expression(ExpressionStmtData { expression })
     }
 
-    pub fn function(name: Token, params: Vec<Token>, body: Vec<Stmt>) -> Stmt {
+    pub fn function(name: Token, params: Vec<Token>, body: Stmt) -> Stmt {
         Stmt::Function(FunctionStmtData {
             name,
             params,
-            body: body.into_iter().map(|e| Box::new(e)).collect(),
+            body: Box::new(body),
         })
     }
 

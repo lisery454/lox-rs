@@ -1,3 +1,5 @@
-writeln(clock());
-writeln(clock());
-writeln(clock());
+fun sayHi(first, last) {
+  print "Hi, " + first + " " + last + "!";
+}
+
+sayHi("Dear", "Lisery");

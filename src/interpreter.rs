@@ -24,10 +24,12 @@ impl Interpreter {
         result.global_env.borrow_mut().define(
             &"clock".to_string(),
             LiteralValue::Callable {
-                function: |_env, _args| {
+                function: Rc::new(|_env, _args| {
                     let now: DateTime<Local> = Local::now();
-                    LiteralValue::String(now.format("%Y-%m-%d %H:%M:%S").to_string())
-                },
+                    Ok(LiteralValue::String(
+                        now.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    ))
+                }),
                 arg_size: 0,
             },
         );
@@ -35,10 +37,10 @@ impl Interpreter {
         result.global_env.borrow_mut().define(
             &"writeln".to_string(),
             LiteralValue::Callable {
-                function: |_env, args| {
+                function: Rc::new(|_env, args| {
                     println!("{}", args[0]);
-                    LiteralValue::Nil
-                },
+                    Ok(LiteralValue::Nil)
+                }),
                 arg_size: 1,
             },
         );
@@ -46,10 +48,10 @@ impl Interpreter {
         result.global_env.borrow_mut().define(
             &"write".to_string(),
             LiteralValue::Callable {
-                function: |_env, args| {
+                function: Rc::new(|_env, args| {
                     print!("{}", args[0]);
-                    LiteralValue::Nil
-                },
+                    Ok(LiteralValue::Nil)
+                }),
                 arg_size: 1,
             },
         );
@@ -224,7 +226,7 @@ fn interpret_expr(
                     }
                     .into());
                 }
-                let result = function(environment.clone(), arguments);
+                let result = function(environment.clone(), arguments)?;
                 return Ok(result);
             } else {
                 return Err(LoxError::InterpretError {
@@ -316,7 +318,28 @@ fn interpret(environment: Rc<RefCell<Environment>>, stmt: &Stmt) -> anyhow::Resu
             interpret_expr(environment.clone(), &expression_stmt_data.expression)?;
             Ok(())
         }
-        Stmt::Function(_function_stmt_data) => Ok(()),
+        Stmt::Function(function_stmt_data) => {
+            let name = function_stmt_data.name.lexeme.clone();
+            let body = function_stmt_data.body.clone();
+            let func_params = function_stmt_data.params.clone();
+            environment.borrow_mut().define(
+                &name,
+                LiteralValue::Callable {
+                    function: Rc::new(move |env, params| {
+                        let env = Rc::new(RefCell::new(Environment::new_with_parent(&env)));
+                        for i in 0..func_params.len() {
+                            let name = func_params[i].lexeme.clone();
+                            let value = params[i].clone();
+                            env.borrow_mut().define(&name, value);
+                        }
+                        interpret(env, &body)?;
+                        Ok(LiteralValue::Nil)
+                    }),
+                    arg_size: function_stmt_data.params.len(),
+                },
+            );
+            Ok(())
+        }
         Stmt::If(if_stmt_data) => {
             let condition = interpret_expr(environment.clone(), &if_stmt_data.condition)?;
             if condition.is_truthy() {
