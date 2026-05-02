@@ -62,27 +62,20 @@ impl Parser {
             "Expect variable name.",
         )?;
 
-        if let Some(identifier) = identifier {
-            let name = identifier.clone();
-            if self.match_advance(|t| matches!(t, TokenType::Equal)) {
-                let initializer = self.parse_experssion()?;
-                self.consume(
-                    |t| matches!(t, TokenType::Semicolon),
-                    "Expect ';' after variable declaration.",
-                )?;
-                return Ok(Stmt::variable(name, Some(initializer)));
-            } else {
-                self.consume(
-                    |t| matches!(t, TokenType::Semicolon),
-                    "Expect ';' after variable declaration.",
-                )?;
-                return Ok(Stmt::variable(name, None));
-            }
+        let name = identifier.clone();
+        if self.match_advance(|t| matches!(t, TokenType::Equal)) {
+            let initializer = self.parse_experssion()?;
+            self.consume(
+                |t| matches!(t, TokenType::Semicolon),
+                "Expect ';' after variable declaration.",
+            )?;
+            return Ok(Stmt::variable(name, Some(initializer)));
         } else {
-            return Err(LoxError::ParseError {
-                message: format!("identifier is none."),
-            }
-            .into());
+            self.consume(
+                |t| matches!(t, TokenType::Semicolon),
+                "Expect ';' after variable declaration.",
+            )?;
+            return Ok(Stmt::variable(name, None));
         }
     }
 
@@ -342,7 +335,7 @@ impl Parser {
     }
 
     /// unary -> ('-' | '!') unary
-    ///            | primary
+    ///            | call
     fn parse_unary(&mut self) -> Result<Expr> {
         if self.match_advance(|t| matches!(t, TokenType::Minus | TokenType::Bang)) {
             let operator = (*self.previous().unwrap()).clone();
@@ -350,7 +343,40 @@ impl Parser {
             return Ok(Expr::unary(operator, right));
         }
 
-        self.parse_primary()
+        self.parse_call()
+    }
+
+    /// call -> primary ( '('  arguments ')' )*
+    /// arguments -> expression (',' expression)*
+    fn parse_call(&mut self) -> Result<Expr> {
+        let mut callee = self.parse_primary()?;
+        while self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
+            let mut arguments = Vec::new();
+            if !self.check(TokenType::RightParen) {
+                loop {
+                    arguments.push(self.parse_experssion()?);
+
+                    if !self.match_advance(|t| matches!(t, TokenType::Comma)) {
+                        break;
+                    }
+                }
+            }
+
+            let paren = self.consume(
+                |t| matches!(t, TokenType::RightParen),
+                "Expect ')' after arguments.",
+            )?;
+
+            if arguments.len() >= 255 {
+                return Err(LoxError::ParseError {
+                    message: format!("Can't have more than 255 arguments. at line {}", paren.line),
+                }
+                .into());
+            }
+
+            callee = Expr::call(paren.clone(), callee, arguments)
+        }
+        return Ok(callee);
     }
 
     /// primary -> false | true | nil | number | string | identifier
@@ -431,7 +457,7 @@ impl Parser {
         }
     }
 
-    fn consume<F>(&mut self, f: F, message: &str) -> Result<Option<&Token>>
+    fn consume<F>(&mut self, f: F, message: &str) -> Result<&Token>
     where
         F: FnOnce(&TokenType) -> bool,
     {
@@ -477,11 +503,11 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self) -> Option<&Token> {
+    fn advance(&mut self) -> &Token {
         if !self.is_at_end() {
             self.current += 1;
         }
-        return self.previous();
+        return self.previous().unwrap();
     }
 
     fn is_at_end(&self) -> bool {

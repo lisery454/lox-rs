@@ -1,9 +1,3 @@
-var b = 0;
-var c = 1;
-
-if (b < 10) {
-    var c = 100;
-    print c;
-}
-
-print c;
+writeln(clock());
+writeln(clock());
+writeln(clock());

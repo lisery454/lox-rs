@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::model::literal::LiteralValue;
 
+#[derive(Debug)]
 pub struct Environment {
     parent: Option<Rc<RefCell<Environment>>>,
     values: HashMap<String, LiteralValue>,
