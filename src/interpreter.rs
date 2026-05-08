@@ -1,24 +1,38 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use chrono::{DateTime, Local};
 
 use crate::{
-    environment::Environment,
     error::{LoxError, LoxResult},
-    model::{expr::Expr, literal::LiteralValue, stmt::Stmt, token::TokenType},
+    model::{
+        environment::Environment,
+        expr::Expr,
+        literal::LiteralValue,
+        stmt::{FunctionStmtData, Stmt},
+        token::{Token, TokenType},
+    },
 };
 
-pub struct Interpreter {
-    environment: Rc<RefCell<Environment>>,
-    global_env: Rc<RefCell<Environment>>,
+#[derive(Debug, Clone)]
+enum FunctionType {
+    None,
+    Function,
 }
 
-impl Interpreter {
+struct InterpreterContext {
+    curr_env: Rc<RefCell<Environment>>,
+    global_env: Rc<RefCell<Environment>>,
+    locals: Rc<RefCell<HashMap<Token, u32>>>,
+}
+
+impl InterpreterContext {
     pub fn new() -> Self {
         let environment = Rc::new(RefCell::new(Environment::new()));
+
         let result = Self {
-            environment: Rc::clone(&environment),
+            curr_env: Rc::clone(&environment),
             global_env: Rc::clone(&environment),
+            locals: Rc::new(RefCell::new(HashMap::new())),
         };
 
         result.global_env.borrow_mut().define(
@@ -31,7 +45,7 @@ impl Interpreter {
                     ))
                 }),
                 arg_size: 0,
-                closure: Rc::clone(&result.environment),
+                closure: Rc::clone(&result.curr_env),
             },
         );
 
@@ -43,7 +57,7 @@ impl Interpreter {
                     Ok(LiteralValue::Nil)
                 }),
                 arg_size: 1,
-                closure: Rc::clone(&result.environment),
+                closure: Rc::clone(&result.curr_env),
             },
         );
 
@@ -55,24 +69,72 @@ impl Interpreter {
                     Ok(LiteralValue::Nil)
                 }),
                 arg_size: 1,
-                closure: Rc::clone(&result.environment),
+                closure: Rc::clone(&result.curr_env),
             },
         );
 
         result
     }
 
-    pub fn interpret(&mut self, stmt: &Stmt) -> LoxResult<()> {
-        interpret(Rc::clone(&self.environment), stmt)?;
+    pub fn clone(&self) -> Self {
+        Self {
+            curr_env: Rc::clone(&self.curr_env),
+            global_env: Rc::clone(&self.global_env),
+            locals: Rc::clone(&self.locals),
+        }
+    }
+
+    pub fn clone_with_new_env(&self, new_env: Rc<RefCell<Environment>>) -> Self {
+        Self {
+            curr_env: new_env,
+            global_env: Rc::clone(&self.global_env),
+            locals: Rc::clone(&self.locals),
+        }
+    }
+}
+
+pub struct Interpreter {
+    context: InterpreterContext,
+    scopes: Vec<HashMap<String, bool>>,
+    function_type: FunctionType,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        Self {
+            context: InterpreterContext::new(),
+            scopes: Vec::new(),
+            function_type: FunctionType::None,
+        }
+    }
+
+    pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> LoxResult<()> {
+        for stmt in stmts {
+            self.resolve_stmt(stmt)?;
+        }
+
+        for stmt in stmts {
+            interpret_stmt(self.context.clone(), stmt)?;
+        }
         Ok(())
     }
 }
 
-fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResult<LiteralValue> {
+fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<LiteralValue> {
     match expr {
         Expr::Assign(data) => {
-            let value = interpret_expr(Rc::clone(&environment), &data.value)?;
-            let success = environment.borrow_mut().assign(&data.name.lexeme, value);
+            let value = interpret_expr(context.clone(), &data.value)?;
+            let success = if let Some(distance) = context.locals.borrow().get(&data.name) {
+                context
+                    .curr_env
+                    .borrow_mut()
+                    .assign_at(distance, &data.name.lexeme, value)
+            } else {
+                context
+                    .global_env
+                    .borrow_mut()
+                    .assign(&data.name.lexeme, value)
+            };
             if success {
                 Ok(LiteralValue::Nil)
             } else {
@@ -86,8 +148,8 @@ fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResu
             }
         }
         Expr::Binary(data) => {
-            let left_value = interpret_expr(Rc::clone(&environment), &data.left)?;
-            let right_value = interpret_expr(Rc::clone(&environment), &data.right)?;
+            let left_value = interpret_expr(context.clone(), &data.left)?;
+            let right_value = interpret_expr(context.clone(), &data.right)?;
             match data.operator.typ {
                 TokenType::Minus => {
                     if let LiteralValue::Number(l) = &left_value
@@ -208,10 +270,10 @@ fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResu
             .into())
         }
         Expr::Call(data) => {
-            let callable = interpret_expr(Rc::clone(&environment), &data.callee)?;
+            let callable = interpret_expr(context.clone(), &data.callee)?;
             let mut arguments = Vec::new();
             for argument in &data.arguments {
-                let arg = interpret_expr(Rc::clone(&environment), &argument)?;
+                let arg = interpret_expr(context.clone(), &argument)?;
                 arguments.push(arg);
             }
             if let LiteralValue::Callable {
@@ -237,18 +299,18 @@ fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResu
             } else {
                 return Err(LoxError::InterpretError {
                     message: format!(
-                        "invalid function callable. line: {}. lexeme: {}",
-                        data.operator.line, data.operator.lexeme
+                        "invalid function callable. line: {}. lexeme: {}. callable: {}",
+                        data.operator.line, data.operator.lexeme, callable
                     ),
                 }
                 .into());
             }
         }
         Expr::Get(_data) => Ok(LiteralValue::Nil),
-        Expr::Grouping(data) => interpret_expr(Rc::clone(&environment), &data.expression),
+        Expr::Grouping(data) => interpret_expr(context.clone(), &data.expression),
         Expr::Literal(data) => Ok(data.value.clone()),
         Expr::Logical(data) => {
-            let left = interpret_expr(Rc::clone(&environment), &data.left)?;
+            let left = interpret_expr(context.clone(), &data.left)?;
             match data.operator.typ {
                 TokenType::Or => {
                     if left.is_truthy() {
@@ -271,14 +333,14 @@ fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResu
                 }
             }
 
-            let right = interpret_expr(Rc::clone(&environment), &data.right)?;
+            let right = interpret_expr(context.clone(), &data.right)?;
             Ok(right)
         }
         Expr::Set(_data) => Ok(LiteralValue::Nil),
         Expr::Super(_data) => Ok(LiteralValue::Nil),
         Expr::This(_data) => Ok(LiteralValue::Nil),
         Expr::Unary(data) => {
-            let right_value = interpret_expr(Rc::clone(&environment), &data.right)?;
+            let right_value = interpret_expr(context.clone(), &data.right)?;
             match data.operator.typ {
                 TokenType::Minus => {
                     if let LiteralValue::Number(n) = &right_value {
@@ -301,34 +363,42 @@ fn interpret_expr(environment: Rc<RefCell<Environment>>, expr: &Expr) -> LoxResu
             .into())
         }
         Expr::Variable(data) => {
-            let value = environment.borrow().get(&data.name.lexeme);
-            Ok(value)
+            if let Some(distance) = context.locals.borrow().get(&data.name) {
+                Ok(context
+                    .curr_env
+                    .borrow()
+                    .get_at(distance, &data.name.lexeme))
+            } else {
+                Ok(context.global_env.borrow().get(&data.name.lexeme))
+            }
         }
     }
 }
 
-fn interpret(environment: Rc<RefCell<Environment>>, stmt: &Stmt) -> LoxResult<()> {
+fn interpret_stmt(context: InterpreterContext, stmt: &Stmt) -> LoxResult<()> {
     match stmt {
         Stmt::Block(block_stmt_data) => {
-            let prev_env = Rc::clone(&environment);
+            let prev_env = Rc::clone(&context.curr_env);
             let new_env = Rc::new(RefCell::new(Environment::new_with_parent(&prev_env)));
-            {
-                for stmt in &block_stmt_data.statements {
-                    interpret(new_env.clone(), &stmt)?;
-                }
+
+            for stmt in &block_stmt_data.statements {
+                interpret_stmt(context.clone_with_new_env(Rc::clone(&new_env)), &stmt)?;
             }
+
             Ok(())
         }
         Stmt::Class(_class_stmt_data) => Ok(()),
         Stmt::Expression(expression_stmt_data) => {
-            interpret_expr(Rc::clone(&environment), &expression_stmt_data.expression)?;
+            interpret_expr(context.clone(), &expression_stmt_data.expression)?;
             Ok(())
         }
         Stmt::Function(function_stmt_data) => {
             let name = function_stmt_data.name.lexeme.clone();
             let body = function_stmt_data.body.clone();
             let func_params = function_stmt_data.params.clone();
-            environment.borrow_mut().define(
+            let context_move = context.clone();
+
+            context.curr_env.borrow_mut().define(
                 &name,
                 LiteralValue::Callable {
                     function: Rc::new(move |env, params| {
@@ -338,7 +408,7 @@ fn interpret(environment: Rc<RefCell<Environment>>, stmt: &Stmt) -> LoxResult<()
                             let value = params[i].clone();
                             env.borrow_mut().define(&name, value);
                         }
-                        let result = interpret(env, &body);
+                        let result = interpret_stmt(context_move.clone_with_new_env(env), &body);
                         match result {
                             Ok(_) => Ok(LiteralValue::Nil),
                             Err(LoxError::ReturnError(v)) => Ok(v),
@@ -346,55 +416,253 @@ fn interpret(environment: Rc<RefCell<Environment>>, stmt: &Stmt) -> LoxResult<()
                         }
                     }),
                     arg_size: function_stmt_data.params.len(),
-                    closure: Rc::clone(&environment),
+                    closure: Rc::clone(&context.curr_env),
                 },
             );
+
             Ok(())
         }
         Stmt::If(if_stmt_data) => {
-            let condition = interpret_expr(Rc::clone(&environment), &if_stmt_data.condition)?;
+            let condition = interpret_expr(context.clone(), &if_stmt_data.condition)?;
             if condition.is_truthy() {
                 if let Some(then_branch) = &if_stmt_data.then_branch {
-                    interpret(Rc::clone(&environment), then_branch)?;
+                    interpret_stmt(context.clone(), then_branch)?;
                 }
             } else {
                 if let Some(else_branch) = &if_stmt_data.else_branch {
-                    interpret(Rc::clone(&environment), else_branch)?;
+                    interpret_stmt(context.clone(), else_branch)?;
                 }
             }
             Ok(())
         }
         Stmt::Print(print_stmt_data) => {
-            let v = interpret_expr(Rc::clone(&environment), &print_stmt_data.expression)?;
+            let v = interpret_expr(context.clone(), &print_stmt_data.expression)?;
             println!("{}", v);
             Ok(())
         }
         Stmt::Return(return_stmt_data) => match &return_stmt_data.value {
             Some(value) => Err(LoxError::ReturnError(interpret_expr(
-                Rc::clone(&environment),
+                context.clone(),
                 value,
             )?)),
             None => Err(LoxError::ReturnError(LiteralValue::Nil)),
         },
         Stmt::Variable(variable_stmt_data) => {
             let value = if let Some(initializer) = &variable_stmt_data.initializer {
-                interpret_expr(Rc::clone(&environment), initializer)?
+                interpret_expr(context.clone(), initializer)?
             } else {
                 LiteralValue::Nil
             };
-            environment
+            context
+                .curr_env
                 .borrow_mut()
                 .define(&variable_stmt_data.name.lexeme, value);
 
             Ok(())
         }
         Stmt::While(while_stmt_data) => {
-            while interpret_expr(Rc::clone(&environment), &while_stmt_data.condition)?.is_truthy() {
+            while interpret_expr(context.clone(), &while_stmt_data.condition)?.is_truthy() {
                 if let Some(stmt) = &while_stmt_data.body {
-                    interpret(Rc::clone(&environment), stmt)?;
+                    interpret_stmt(context.clone(), stmt)?;
                 }
             }
             Ok(())
         }
+    }
+}
+
+// resolver
+impl Interpreter {
+    fn resolve_stmt(&mut self, stmt: &Stmt) -> LoxResult<()> {
+        match stmt {
+            Stmt::Block(block_stmt_data) => {
+                self.begin_scope();
+                for stmt in &block_stmt_data.statements {
+                    self.resolve_stmt(stmt)?;
+                }
+                self.end_scope();
+                Ok(())
+            }
+            Stmt::Class(_class_stmt_data) => Ok(()),
+            Stmt::Expression(expression_stmt_data) => {
+                self.resolve_expr(&expression_stmt_data.expression)?;
+                Ok(())
+            }
+            Stmt::Function(function_stmt_data) => {
+                self.declare(&function_stmt_data.name)?;
+                self.define(&function_stmt_data.name);
+                self.resolve_function(&function_stmt_data, FunctionType::Function)?;
+                Ok(())
+            }
+            Stmt::If(if_stmt_data) => {
+                self.resolve_expr(&if_stmt_data.condition)?;
+                if let Some(then_branch) = &if_stmt_data.then_branch {
+                    self.resolve_stmt(then_branch)?;
+                }
+                if let Some(else_branch) = &if_stmt_data.else_branch {
+                    self.resolve_stmt(else_branch)?;
+                }
+                Ok(())
+            }
+            Stmt::Print(print_stmt_data) => {
+                self.resolve_expr(&print_stmt_data.expression)?;
+                Ok(())
+            }
+            Stmt::Return(return_stmt_data) => {
+                if matches!(self.function_type, FunctionType::None) {
+                    return Err(LoxError::InterpretError {
+                        message: "Can't return from top-level code.".into(),
+                    }
+                    .into());
+                }
+                if let Some(value) = &return_stmt_data.value {
+                    self.resolve_expr(value)?;
+                }
+                Ok(())
+            }
+            Stmt::Variable(variable_stmt_data) => {
+                self.declare(&variable_stmt_data.name)?;
+                if let Some(initializer) = &variable_stmt_data.initializer {
+                    self.resolve_expr(initializer)?;
+                }
+                self.define(&variable_stmt_data.name);
+                Ok(())
+            }
+            Stmt::While(while_stmt_data) => {
+                self.resolve_expr(&while_stmt_data.condition)?;
+                if let Some(body) = &while_stmt_data.body {
+                    self.resolve_stmt(body)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn resolve_expr(&mut self, expr: &Expr) -> LoxResult<()> {
+        match expr {
+            Expr::Assign(assign_expr_data) => {
+                self.resolve_expr(&assign_expr_data.value)?;
+                self.resolve_local_var(&assign_expr_data.name);
+                Ok(())
+            }
+            Expr::Binary(binary_expr_data) => {
+                self.resolve_expr(&binary_expr_data.left)?;
+                self.resolve_expr(&binary_expr_data.right)?;
+                Ok(())
+            }
+            Expr::Call(call_expr_data) => {
+                self.resolve_expr(&call_expr_data.callee)?;
+                for expr in &call_expr_data.arguments {
+                    self.resolve_expr(expr)?;
+                }
+                Ok(())
+            }
+            Expr::Get(_get_expr_data) => Ok(()),
+            Expr::Grouping(grouping_expr_data) => {
+                self.resolve_expr(&grouping_expr_data.expression)?;
+                Ok(())
+            }
+            Expr::Literal(_literal_expr_data) => Ok(()),
+            Expr::Logical(logical_expr_data) => {
+                self.resolve_expr(&logical_expr_data.left)?;
+                self.resolve_expr(&logical_expr_data.right)?;
+                Ok(())
+            }
+            Expr::Set(_set_expr_data) => Ok(()),
+            Expr::Super(_super_expr_data) => Ok(()),
+            Expr::This(_this_expr_data) => Ok(()),
+            Expr::Unary(unary_expr_data) => {
+                self.resolve_expr(&unary_expr_data.right)?;
+                Ok(())
+            }
+            Expr::Variable(variable_expr_data) => {
+                if !self.scopes.is_empty()
+                    && let Some(scope) = self.scopes.last()
+                    && let Some(is_defined) = scope.get(&variable_expr_data.name.lexeme)
+                    && *is_defined == false
+                {
+                    return Err(LoxError::InterpretError {
+                        message: "Can't read local variable in its own initializer.".into(),
+                    }
+                    .into());
+                }
+
+                self.resolve_local_var(&variable_expr_data.name);
+
+                Ok(())
+            }
+        }
+    }
+
+    fn resolve_local_var(&mut self, token: &Token) {
+        for scope_i in (0..self.scopes.len()).rev() {
+            let scope = &self.scopes[scope_i];
+            if scope.contains_key(&token.lexeme) {
+                self.interpreter_resolve(token, (self.scopes.len() - 1 - scope_i) as u32);
+                return;
+            }
+        }
+    }
+
+    fn interpreter_resolve(&mut self, token: &Token, depth: u32) {
+        self.context
+            .locals
+            .borrow_mut()
+            .insert(token.clone(), depth);
+    }
+
+    fn resolve_function(
+        &mut self,
+        func_data: &FunctionStmtData,
+        function_type: FunctionType,
+    ) -> LoxResult<()> {
+        self.begin_scope();
+
+        let enclosing_function_type = self.function_type.clone();
+        self.function_type = function_type;
+
+        for token in &func_data.params {
+            self.declare(token)?;
+            self.define(token);
+        }
+
+        self.resolve_stmt(&func_data.body)?;
+
+        self.end_scope();
+
+        self.function_type = enclosing_function_type;
+        Ok(())
+    }
+
+    fn declare(&mut self, token: &Token) -> LoxResult<()> {
+        if let Some(scope) = self.scopes.last_mut() {
+            let name = token.lexeme.clone();
+            if scope.contains_key(&name) {
+                return Err(LoxError::InterpretError {
+                    message: format!(
+                        "Already a variable with this name <{}> in this scope.",
+                        name
+                    ),
+                }
+                .into());
+            }
+            scope.insert(token.lexeme.clone(), false);
+        }
+
+        Ok(())
+    }
+
+    fn define(&mut self, token: &Token) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(token.lexeme.clone(), true);
+        }
+    }
+
+    fn begin_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn end_scope(&mut self) {
+        self.scopes.pop();
     }
 }

@@ -1,3 +1,5 @@
+use ordered_float::OrderedFloat;
+
 use crate::{
     error::{LoxError, LoxResult},
     model::token::{KEYWORDS, Token, TokenType},
@@ -145,6 +147,7 @@ impl Scanner {
                                 .iter()
                                 .collect::<String>()
                                 .parse::<f64>()
+                                .map(|n| OrderedFloat(n))
                                 .map_err(|_| LoxError::ScanError {
                                     message: format!("invalid number format, line: {}", self.line),
                                 })?,

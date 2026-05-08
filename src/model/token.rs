@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fmt, sync::LazyLock};
 
+use ordered_float::OrderedFloat;
 use strum_macros::Display;
 
-#[derive(Display, Clone, PartialEq, Debug)]
+#[derive(Display, Clone, PartialEq, Debug, Eq, Hash)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -30,7 +31,7 @@ pub enum TokenType {
     // Literals.
     Identifier(String),
     String(String),
-    Number(f64),
+    Number(OrderedFloat<f64>),
 
     // Keywords.
     And,
@@ -53,7 +54,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Token {
     pub(crate) typ: TokenType,
     pub(crate) lexeme: String,

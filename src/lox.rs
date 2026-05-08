@@ -55,16 +55,14 @@ impl Lox {
         // }
 
         let mut parser = Parser::new(tokens);
-        let stats = parser.parse()?;
+        let stmts = parser.parse()?;
 
-        // for stmt in &stats {
+        // for stmt in &stmts {
         //     println!("{:?}", stmt);
         // }
 
         let mut interpreter = Interpreter::new();
-        for stmt in &stats {
-            interpreter.interpret(stmt)?;
-        }
+        interpreter.interpret(&stmts)?;
 
         Ok(())
     }

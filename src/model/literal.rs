@@ -4,14 +4,16 @@ use std::{
     rc::Rc,
 };
 
-use crate::{environment::Environment, error::LoxResult};
+use ordered_float::OrderedFloat;
+
+use crate::{error::LoxResult, model::environment::Environment};
 
 type NativeFunction =
     Rc<dyn Fn(Rc<RefCell<Environment>>, Vec<LiteralValue>) -> LoxResult<LiteralValue>>;
 
 #[derive(Clone)]
 pub enum LiteralValue {
-    Number(f64),
+    Number(OrderedFloat<f64>),
     String(String),
     Bool(bool),
     Callable {
@@ -93,8 +95,8 @@ impl From<String> for LiteralValue {
     }
 }
 
-impl From<f64> for LiteralValue {
-    fn from(n: f64) -> Self {
+impl From<OrderedFloat<f64>> for LiteralValue {
+    fn from(n: OrderedFloat<f64>) -> Self {
         LiteralValue::Number(n)
     }
 }

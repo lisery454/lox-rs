@@ -1,7 +1,6 @@
-mod environment;
+mod lox;
 mod error;
 mod interpreter;
-mod lox;
 mod model;
 mod parser;
 mod scanner;
