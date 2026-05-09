@@ -7,16 +7,23 @@ use crate::{
     model::{
         environment::Environment,
         expr::Expr,
-        literal::LiteralValue,
+        literal::{LiteralValue, LoxClass, LoxFunction, LoxInstance},
         stmt::{FunctionStmtData, Stmt},
         token::{Token, TokenType},
     },
 };
 
 #[derive(Debug, Clone)]
+enum ClassType {
+    None,
+    Class,
+}
+
+#[derive(Debug, Clone)]
 enum FunctionType {
     None,
     Function,
+    Method,
 }
 
 struct InterpreterContext {
@@ -37,40 +44,16 @@ impl InterpreterContext {
 
         result.global_env.borrow_mut().define(
             &"clock".to_string(),
-            LiteralValue::Callable {
-                function: Rc::new(|_env, _args| {
+            LiteralValue::Callable(Rc::new(LoxFunction::new(
+                Rc::new(|_env, _args| {
                     let now: DateTime<Local> = Local::now();
                     Ok(LiteralValue::String(
                         now.format("%Y-%m-%d %H:%M:%S").to_string(),
                     ))
                 }),
-                arg_size: 0,
-                closure: Rc::clone(&result.curr_env),
-            },
-        );
-
-        result.global_env.borrow_mut().define(
-            &"writeln".to_string(),
-            LiteralValue::Callable {
-                function: Rc::new(|_env, args| {
-                    println!("{}", args[0]);
-                    Ok(LiteralValue::Nil)
-                }),
-                arg_size: 1,
-                closure: Rc::clone(&result.curr_env),
-            },
-        );
-
-        result.global_env.borrow_mut().define(
-            &"write".to_string(),
-            LiteralValue::Callable {
-                function: Rc::new(|_env, args| {
-                    print!("{}", args[0]);
-                    Ok(LiteralValue::Nil)
-                }),
-                arg_size: 1,
-                closure: Rc::clone(&result.curr_env),
-            },
+                0,
+                Rc::clone(&result.curr_env),
+            ))),
         );
 
         result
@@ -97,6 +80,7 @@ pub struct Interpreter {
     context: InterpreterContext,
     scopes: Vec<HashMap<String, bool>>,
     function_type: FunctionType,
+    class_type: ClassType,
 }
 
 impl Interpreter {
@@ -105,6 +89,7 @@ impl Interpreter {
             context: InterpreterContext::new(),
             scopes: Vec::new(),
             function_type: FunctionType::None,
+            class_type: ClassType::None,
         }
     }
 
@@ -276,17 +261,12 @@ fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<Literal
                 let arg = interpret_expr(context.clone(), &argument)?;
                 arguments.push(arg);
             }
-            if let LiteralValue::Callable {
-                function,
-                arg_size,
-                closure,
-            } = callable
-            {
-                if arguments.len() != arg_size {
+            if let LiteralValue::Callable(func) = callable {
+                if arguments.len() != func.arg_size {
                     return Err(LoxError::InterpretError {
                         message: format!(
                             "Expected {} arguments but got {}. line: {}. lexeme: {}",
-                            arg_size,
+                            func.arg_size,
                             arguments.len(),
                             data.operator.line,
                             data.operator.lexeme
@@ -294,8 +274,31 @@ fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<Literal
                     }
                     .into());
                 }
-                let result = function(closure, arguments)?;
+                let result = (func.function)(Rc::clone(&func.closure), arguments)?;
                 return Ok(result);
+            } else if let LiteralValue::Class(class) = callable {
+                let size = class.cons_len();
+                if arguments.len() != size {
+                    return Err(LoxError::InterpretError {
+                        message: format!(
+                            "Expected {} arguments but got {}. line: {}. lexeme: {}",
+                            size,
+                            arguments.len(),
+                            data.operator.line,
+                            data.operator.lexeme
+                        ),
+                    }
+                    .into());
+                }
+                let instance = Rc::new(LoxInstance::new(&class));
+                if let Some(constructor) = &instance.class.constructor {
+                    let this = LiteralValue::ClassInstance(Rc::clone(&instance));
+                    let func = constructor.clone().bind(this);
+                    (func.function)(Rc::clone(&func.closure), arguments)?;
+                }
+                let value = LiteralValue::ClassInstance(instance);
+
+                return Ok(value);
             } else {
                 return Err(LoxError::InterpretError {
                     message: format!(
@@ -306,7 +309,20 @@ fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<Literal
                 .into());
             }
         }
-        Expr::Get(_data) => Ok(LiteralValue::Nil),
+        Expr::Get(data) => {
+            let value = interpret_expr(context.clone(), &data.object)?;
+            if let LiteralValue::ClassInstance(instance) = value {
+                return Ok(instance.get(&data.name));
+            } else {
+                return Err(LoxError::InterpretError {
+                    message: format!(
+                        "Only instances have properties. line: {}. lexeme: {}",
+                        data.name.line, data.name.lexeme
+                    ),
+                }
+                .into());
+            }
+        }
         Expr::Grouping(data) => interpret_expr(context.clone(), &data.expression),
         Expr::Literal(data) => Ok(data.value.clone()),
         Expr::Logical(data) => {
@@ -336,9 +352,33 @@ fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<Literal
             let right = interpret_expr(context.clone(), &data.right)?;
             Ok(right)
         }
-        Expr::Set(_data) => Ok(LiteralValue::Nil),
+        Expr::Set(data) => {
+            let obj = interpret_expr(context.clone(), &data.object)?;
+            if let LiteralValue::ClassInstance(instance) = obj {
+                let val = interpret_expr(context.clone(), &data.value)?;
+                instance.set(&data.name, val.clone());
+                return Ok(val);
+            } else {
+                return Err(LoxError::InterpretError {
+                    message: format!(
+                        "Only instances have fields. line: {}. lexeme: {}",
+                        data.name.line, data.name.lexeme
+                    ),
+                }
+                .into());
+            }
+        }
         Expr::Super(_data) => Ok(LiteralValue::Nil),
-        Expr::This(_data) => Ok(LiteralValue::Nil),
+        Expr::This(data) => {
+            if let Some(distance) = context.locals.borrow().get(&data.keyword) {
+                Ok(context
+                    .curr_env
+                    .borrow()
+                    .get_at(distance, &data.keyword.lexeme))
+            } else {
+                Ok(context.global_env.borrow().get(&data.keyword.lexeme))
+            }
+        }
         Expr::Unary(data) => {
             let right_value = interpret_expr(context.clone(), &data.right)?;
             match data.operator.typ {
@@ -387,37 +427,39 @@ fn interpret_stmt(context: InterpreterContext, stmt: &Stmt) -> LoxResult<()> {
 
             Ok(())
         }
-        Stmt::Class(_class_stmt_data) => Ok(()),
+        Stmt::Class(class_stmt_data) => {
+            context
+                .curr_env
+                .borrow_mut()
+                .define(&class_stmt_data.name.lexeme, LiteralValue::Nil);
+
+            let mut methods = HashMap::new();
+            for method in &class_stmt_data.methods {
+                if let Stmt::Function(func_data) = &**method {
+                    let function = create_function(func_data, context.clone());
+                    methods.insert(func_data.name.lexeme.clone(), function);
+                }
+            }
+
+            context.curr_env.borrow_mut().assign(
+                &class_stmt_data.name.lexeme,
+                LiteralValue::Class(Rc::new(LoxClass::new(
+                    &class_stmt_data.name.lexeme,
+                    methods,
+                ))),
+            );
+            Ok(())
+        }
         Stmt::Expression(expression_stmt_data) => {
             interpret_expr(context.clone(), &expression_stmt_data.expression)?;
             Ok(())
         }
         Stmt::Function(function_stmt_data) => {
             let name = function_stmt_data.name.lexeme.clone();
-            let body = function_stmt_data.body.clone();
-            let func_params = function_stmt_data.params.clone();
-            let context_move = context.clone();
 
             context.curr_env.borrow_mut().define(
                 &name,
-                LiteralValue::Callable {
-                    function: Rc::new(move |env, params| {
-                        let env = Rc::new(RefCell::new(Environment::new_with_parent(&env)));
-                        for i in 0..func_params.len() {
-                            let name = func_params[i].lexeme.clone();
-                            let value = params[i].clone();
-                            env.borrow_mut().define(&name, value);
-                        }
-                        let result = interpret_stmt(context_move.clone_with_new_env(env), &body);
-                        match result {
-                            Ok(_) => Ok(LiteralValue::Nil),
-                            Err(LoxError::ReturnError(v)) => Ok(v),
-                            Err(_) => Ok(LiteralValue::Nil),
-                        }
-                    }),
-                    arg_size: function_stmt_data.params.len(),
-                    closure: Rc::clone(&context.curr_env),
-                },
+                LiteralValue::Callable(create_function(function_stmt_data, context.clone())),
             );
 
             Ok(())
@@ -471,6 +513,34 @@ fn interpret_stmt(context: InterpreterContext, stmt: &Stmt) -> LoxResult<()> {
     }
 }
 
+fn create_function(
+    function_stmt_data: &FunctionStmtData,
+    context: InterpreterContext,
+) -> Rc<LoxFunction> {
+    let body = function_stmt_data.body.clone();
+    let func_params = function_stmt_data.params.clone();
+    let context_move = context.clone();
+
+    return Rc::new(LoxFunction::new(
+        Rc::new(move |env, params| {
+            let env = Rc::new(RefCell::new(Environment::new_with_parent(&env)));
+            for i in 0..func_params.len() {
+                let name = func_params[i].lexeme.clone();
+                let value = params[i].clone();
+                env.borrow_mut().define(&name, value);
+            }
+            let result = interpret_stmt(context_move.clone_with_new_env(env), &body);
+            match result {
+                Ok(_) => Ok(LiteralValue::Nil),
+                Err(LoxError::ReturnError(v)) => Ok(v),
+                Err(_) => Ok(LiteralValue::Nil),
+            }
+        }),
+        function_stmt_data.params.len(),
+        Rc::clone(&context.curr_env),
+    ));
+}
+
 // resolver
 impl Interpreter {
     fn resolve_stmt(&mut self, stmt: &Stmt) -> LoxResult<()> {
@@ -483,7 +553,29 @@ impl Interpreter {
                 self.end_scope();
                 Ok(())
             }
-            Stmt::Class(_class_stmt_data) => Ok(()),
+            Stmt::Class(class_stmt_data) => {
+                let enclosing_class_type = self.class_type.clone();
+                self.class_type = ClassType::Class;
+
+                self.declare(&class_stmt_data.name)?;
+                self.define(&class_stmt_data.name);
+
+                self.begin_scope();
+
+                self.scopes.last_mut().unwrap().insert("this".into(), true);
+
+                for method in &class_stmt_data.methods {
+                    if let Stmt::Function(func_data) = &**method {
+                        self.resolve_function(func_data, FunctionType::Method)?;
+                    }
+                }
+
+                self.end_scope();
+
+                self.class_type = enclosing_class_type;
+
+                Ok(())
+            }
             Stmt::Expression(expression_stmt_data) => {
                 self.resolve_expr(&expression_stmt_data.expression)?;
                 Ok(())
@@ -557,7 +649,10 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            Expr::Get(_get_expr_data) => Ok(()),
+            Expr::Get(get_expr_data) => {
+                self.resolve_expr(&get_expr_data.object)?;
+                Ok(())
+            }
             Expr::Grouping(grouping_expr_data) => {
                 self.resolve_expr(&grouping_expr_data.expression)?;
                 Ok(())
@@ -568,9 +663,24 @@ impl Interpreter {
                 self.resolve_expr(&logical_expr_data.right)?;
                 Ok(())
             }
-            Expr::Set(_set_expr_data) => Ok(()),
+            Expr::Set(set_expr_data) => {
+                self.resolve_expr(&set_expr_data.value)?;
+                self.resolve_expr(&set_expr_data.object)?;
+                Ok(())
+            }
             Expr::Super(_super_expr_data) => Ok(()),
-            Expr::This(_this_expr_data) => Ok(()),
+            Expr::This(this_expr_data) => {
+                if matches!(self.class_type, ClassType::None) {
+                    return Err(LoxError::InterpretError {
+                        message: "Can't use 'this' outside of a class.".into(),
+                    }
+                    .into());
+                }
+
+                self.resolve_local_var(&this_expr_data.keyword);
+
+                Ok(())
+            }
             Expr::Unary(unary_expr_data) => {
                 self.resolve_expr(&unary_expr_data.right)?;
                 Ok(())

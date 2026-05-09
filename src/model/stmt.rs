@@ -8,7 +8,7 @@ pub struct BlockStmtData {
 #[derive(Debug, Clone)]
 pub struct ClassStmtData {
     pub(crate) name: Token,
-    pub(crate) superclass: Expr,        // variable
+    // pub(crate) superclass: Expr,
     pub(crate) methods: Vec<Box<Stmt>>, // func
 }
 
@@ -38,7 +38,6 @@ pub struct PrintStmtData {
 
 #[derive(Debug, Clone)]
 pub struct ReturnStmtData {
-    pub(crate) keyword: Token,
     pub(crate) value: Option<Expr>,
 }
 
@@ -74,10 +73,10 @@ impl Stmt {
         })
     }
 
-    pub fn class(class_name: Token, super_class: Expr, methods: Vec<Stmt>) -> Stmt {
+    pub fn class(class_name: Token, methods: Vec<Stmt>) -> Stmt {
         Stmt::Class(ClassStmtData {
             name: class_name,
-            superclass: super_class,
+            // superclass: super_class,
             methods: methods.into_iter().map(|e| Box::new(e)).collect(),
         })
     }
@@ -106,8 +105,8 @@ impl Stmt {
         Stmt::Print(PrintStmtData { expression })
     }
 
-    pub fn return_(keyword: Token, value: Option<Expr>) -> Stmt {
-        Stmt::Return(ReturnStmtData { keyword, value })
+    pub fn return_(value: Option<Expr>) -> Stmt {
+        Stmt::Return(ReturnStmtData { value })
     }
 
     pub fn variable(name: Token, initializer: Option<Expr>) -> Stmt {

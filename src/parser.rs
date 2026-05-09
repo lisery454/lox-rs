@@ -36,12 +36,14 @@ impl Parser {
         Ok(stmts)
     }
 
-    /// stmt -> var_declaration_stmt | statement_stmt | fun_declaration_stmt
+    /// stmt -> var_declaration_stmt | statement_stmt | fun_declaration_stmt | class_declaration_stmt
     fn parse_stmt(&mut self) -> Option<Stmt> {
         let result = if self.match_advance(|t| matches!(t, TokenType::Var)) {
             self.parse_var_declaration()
         } else if self.match_advance(|t| matches!(t, TokenType::Function)) {
             self.parse_fun_declaration("function")
+        } else if self.match_advance(|t| matches!(t, TokenType::Class)) {
+            self.parse_class_declaration()
         } else {
             self.parse_statement()
         };
@@ -53,6 +55,33 @@ impl Parser {
             self.synchronize();
             None
         }
+    }
+
+    // class_declaration_stmt -> 'class' identifier '{' fun_declaration_stmt* '}'
+    fn parse_class_declaration(&mut self) -> LoxResult<Stmt> {
+        let name = self
+            .consume(
+                |t| matches!(t, TokenType::Identifier(_)),
+                "Expect class name.",
+            )?
+            .clone();
+
+        self.consume(
+            |t| matches!(t, TokenType::LeftBrace),
+            "Expect '{' before class body.",
+        )?;
+
+        let mut methods = Vec::new();
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
+            methods.push(self.parse_fun_declaration("methods")?);
+        }
+
+        self.consume(
+            |t| matches!(t, TokenType::RightBrace),
+            "Expect '}' after class body.",
+        )?;
+
+        Ok(Stmt::class(name, methods))
     }
 
     /// fun_declaration_stmt -> 'fun' identifier '(' parameters? ')' block
@@ -149,8 +178,8 @@ impl Parser {
         }
     }
 
+    /// return_stmt -> return expr ';'
     fn parse_return_statements(&mut self) -> LoxResult<Stmt> {
-        let keyword = self.previous().unwrap().clone();
         let mut value = None;
         if !self.check(TokenType::Semicolon) {
             value = Some(self.parse_expression()?);
@@ -159,10 +188,10 @@ impl Parser {
             |t| matches!(t, TokenType::Semicolon),
             "Expect ';' after return value.",
         )?;
-        Ok(Stmt::return_(keyword, value))
+        Ok(Stmt::return_(value))
     }
 
-    // for_stmt -> 'for' '('  ')'
+    /// for_stmt -> 'for' '('  ')'
     fn parse_for_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
@@ -215,7 +244,7 @@ impl Parser {
         Ok(body)
     }
 
-    // while_stmt -> 'while' '(' expr ')'  stmt
+    /// while_stmt -> 'while' '(' expr ')'  stmt
     fn parse_while_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
@@ -234,7 +263,7 @@ impl Parser {
         Ok(Stmt::while_(condition, body))
     }
 
-    // if_stmt -> 'if' '(' expr ')'  stmt  ('else' stmt)?
+    /// if_stmt -> 'if' '(' expr ')'  stmt  ('else' stmt)?
     fn parse_if_statements(&mut self) -> LoxResult<Stmt> {
         self.consume(
             |t| matches!(t, TokenType::LeftParen),
@@ -256,7 +285,7 @@ impl Parser {
         Ok(Stmt::if_(condition, then_branch, else_branch))
     }
 
-    // block_stmt -> '{' stmt '}'
+    /// block_stmt -> '{' stmt '}'
     fn parse_block_statements(&mut self) -> LoxResult<Stmt> {
         let mut stmts = Vec::new();
 
@@ -298,7 +327,8 @@ impl Parser {
     }
 
     /// common_expression -> logic_or | assign
-    /// assign -> logic_or '=' logic_or
+    /// assign -> logic_or '=' logic_or |
+    ///         ( call "." )? identifier '=' logic_or
     fn parse_assignment(&mut self) -> LoxResult<Expr> {
         let expr = self.parse_logic_or()?;
 
@@ -308,6 +338,8 @@ impl Parser {
             if let Expr::Variable(v) = expr {
                 let name = v.name;
                 return Ok(Expr::assign(name, value));
+            } else if let Expr::Get(data) = expr {
+                return Ok(Expr::set(data.name, data.object, value));
             }
             return Err(LoxError::ParseError {
                 message: format!("Invalid assignment target. at {:?}", prev_token),
@@ -412,36 +444,52 @@ impl Parser {
         self.parse_call()
     }
 
-    /// call -> primary ( '('  arguments ')' )*
+    /// call -> primary ( '('  arguments ')' | '.' identifier )*
     /// arguments -> expression (',' expression)*
     fn parse_call(&mut self) -> LoxResult<Expr> {
         let mut callee = self.parse_primary()?;
-        while self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
-            let mut arguments = Vec::new();
-            if !self.check(TokenType::RightParen) {
-                loop {
-                    arguments.push(self.parse_expression()?);
+        loop {
+            if self.match_advance(|t| matches!(t, TokenType::LeftParen)) {
+                let mut arguments = Vec::new();
+                if !self.check(TokenType::RightParen) {
+                    loop {
+                        arguments.push(self.parse_expression()?);
 
-                    if !self.match_advance(|t| matches!(t, TokenType::Comma)) {
-                        break;
+                        if !self.match_advance(|t| matches!(t, TokenType::Comma)) {
+                            break;
+                        }
                     }
                 }
-            }
 
-            let paren = self.consume(
-                |t| matches!(t, TokenType::RightParen),
-                "Expect ')' after arguments.",
-            )?;
+                let paren = self.consume(
+                    |t| matches!(t, TokenType::RightParen),
+                    "Expect ')' after arguments.",
+                )?;
 
-            if arguments.len() >= 255 {
-                return Err(LoxError::ParseError {
-                    message: format!("Can't have more than 255 arguments. at line {}", paren.line),
+                if arguments.len() >= 255 {
+                    return Err(LoxError::ParseError {
+                        message: format!(
+                            "Can't have more than 255 arguments. at line {}",
+                            paren.line
+                        ),
+                    }
+                    .into());
                 }
-                .into());
-            }
 
-            callee = Expr::call(paren.clone(), callee, arguments)
+                callee = Expr::call(paren.clone(), callee, arguments)
+            } else if self.match_advance(|t| matches!(t, TokenType::Dot)) {
+                let name = self
+                    .consume(
+                        |t| matches!(t, TokenType::Identifier(_)),
+                        "Expect property name after '.'.",
+                    )?
+                    .clone();
+                callee = Expr::get(name, callee);
+            } else {
+                break;
+            }
         }
+
         return Ok(callee);
     }
 
@@ -472,6 +520,10 @@ impl Parser {
             _ => None,
         }) {
             return Ok(Expr::literal(n));
+        }
+
+        if self.match_advance(|t| matches!(t, TokenType::This)) {
+            return Ok(Expr::this(self.previous().unwrap().clone()));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::Identifier(_))) {

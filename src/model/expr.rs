@@ -144,10 +144,10 @@ impl Expr {
         })
     }
 
-    pub fn set(name: Token, object: Expr, value: Expr) -> Expr {
+    pub fn set(name: Token, object: Box<Expr>, value: Expr) -> Expr {
         Expr::Set(SetExprData {
             name,
-            object: Box::new(object),
+            object: object,
             value: Box::new(value),
         })
     }
