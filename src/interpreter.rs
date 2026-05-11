@@ -17,6 +17,7 @@ use crate::{
 enum ClassType {
     None,
     Class,
+    SubClass,
 }
 
 #[derive(Debug, Clone)]
@@ -368,7 +369,50 @@ fn interpret_expr(context: InterpreterContext, expr: &Expr) -> LoxResult<Literal
                 .into());
             }
         }
-        Expr::Super(_data) => Ok(LiteralValue::Nil),
+        Expr::Super(data) => {
+            let locals = context.locals.borrow();
+            let distance = locals.get(&data.keyword);
+
+            let super_class = if let Some(distance) = distance {
+                context
+                    .curr_env
+                    .borrow()
+                    .get_at(distance, &"super".to_string())
+            } else {
+                context.global_env.borrow().get(&"super".to_string())
+            };
+
+            let this_class_instance = if let Some(distance) = distance {
+                let distance = distance - 1;
+                context
+                    .curr_env
+                    .borrow()
+                    .get_at(&distance, &"this".to_string())
+            } else {
+                context.global_env.borrow().get(&"this".to_string())
+            };
+
+            if let LiteralValue::Class(super_class) = super_class
+                && let LiteralValue::ClassInstance(instance) = this_class_instance
+            {
+                let method = super_class.find_method(&data.method.lexeme);
+                if let Some(method) = method {
+                    let this = LiteralValue::ClassInstance(Rc::clone(&instance));
+                    let f = method.clone().bind(this);
+                    return Ok(LiteralValue::Callable(f));
+                } else {
+                    return Err(LoxError::InterpretError {
+                        message: format!(
+                            "Undefined property. line: {}. lexeme: {}",
+                            data.method.line, data.method.lexeme
+                        ),
+                    }
+                    .into());
+                }
+            }
+
+            Ok(LiteralValue::Nil)
+        }
         Expr::This(data) => {
             if let Some(distance) = context.locals.borrow().get(&data.keyword) {
                 Ok(context
@@ -428,26 +472,51 @@ fn interpret_stmt(context: InterpreterContext, stmt: &Stmt) -> LoxResult<()> {
             Ok(())
         }
         Stmt::Class(class_stmt_data) => {
+            let mut super_class = None;
+
+            if let Some(sc) = &class_stmt_data.super_class {
+                let LiteralValue::Class(c) = interpret_expr(context.clone(), sc)? else {
+                    return Err(LoxError::InterpretError {
+                        message: "Superclass must be a class.".into(),
+                    }
+                    .into());
+                };
+
+                super_class = Some(c);
+            }
+
             context
                 .curr_env
                 .borrow_mut()
                 .define(&class_stmt_data.name.lexeme, LiteralValue::Nil);
 
+            let mut inner_context = context.clone();
+            if let Some(sc) = &super_class {
+                let prev_env = Rc::clone(&context.curr_env);
+                let new_env = Rc::new(RefCell::new(Environment::new_with_parent(&prev_env)));
+                new_env
+                    .borrow_mut()
+                    .define(&"super".into(), LiteralValue::Class(sc.clone()));
+                inner_context = context.clone_with_new_env(Rc::clone(&new_env))
+            }
+
             let mut methods = HashMap::new();
             for method in &class_stmt_data.methods {
                 if let Stmt::Function(func_data) = &**method {
-                    let function = create_function(func_data, context.clone());
+                    let function = create_function(func_data, inner_context.clone());
                     methods.insert(func_data.name.lexeme.clone(), function);
                 }
             }
-
-            context.curr_env.borrow_mut().assign(
+            let class = LiteralValue::Class(Rc::new(LoxClass::new(
                 &class_stmt_data.name.lexeme,
-                LiteralValue::Class(Rc::new(LoxClass::new(
-                    &class_stmt_data.name.lexeme,
-                    methods,
-                ))),
-            );
+                methods,
+                super_class,
+            )));
+
+            context
+                .curr_env
+                .borrow_mut()
+                .assign(&class_stmt_data.name.lexeme, class);
             Ok(())
         }
         Stmt::Expression(expression_stmt_data) => {
@@ -560,8 +629,24 @@ impl Interpreter {
                 self.declare(&class_stmt_data.name)?;
                 self.define(&class_stmt_data.name);
 
-                self.begin_scope();
+                if let Some(super_class) = &class_stmt_data.super_class {
+                    if let Expr::Variable(expr) = super_class
+                        && expr.name.lexeme == class_stmt_data.name.lexeme
+                    {
+                        return Err(LoxError::InterpretError {
+                            message: "A class can't inherit from itself.".into(),
+                        }
+                        .into());
+                    }
 
+                    self.class_type = ClassType::SubClass;
+                    self.resolve_expr(super_class)?;
+
+                    self.begin_scope();
+                    self.scopes.last_mut().unwrap().insert("super".into(), true);
+                }
+
+                self.begin_scope();
                 self.scopes.last_mut().unwrap().insert("this".into(), true);
 
                 for method in &class_stmt_data.methods {
@@ -571,6 +656,10 @@ impl Interpreter {
                 }
 
                 self.end_scope();
+
+                if let Some(_) = &class_stmt_data.super_class {
+                    self.end_scope();
+                }
 
                 self.class_type = enclosing_class_type;
 
@@ -668,7 +757,22 @@ impl Interpreter {
                 self.resolve_expr(&set_expr_data.object)?;
                 Ok(())
             }
-            Expr::Super(_super_expr_data) => Ok(()),
+            Expr::Super(super_expr_data) => {
+                if matches!(self.class_type, ClassType::None) {
+                    return Err(LoxError::InterpretError {
+                        message: "Can't use 'super' outside of a class.".into(),
+                    }
+                    .into());
+                } else if matches!(self.class_type, ClassType::Class) {
+                    return Err(LoxError::InterpretError {
+                        message: "Can't use 'super' in a class with no superclass.".into(),
+                    }
+                    .into());
+                }
+
+                self.resolve_local_var(&super_expr_data.keyword);
+                Ok(())
+            }
             Expr::This(this_expr_data) => {
                 if matches!(self.class_type, ClassType::None) {
                     return Err(LoxError::InterpretError {

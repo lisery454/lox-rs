@@ -8,7 +8,7 @@ pub struct BlockStmtData {
 #[derive(Debug, Clone)]
 pub struct ClassStmtData {
     pub(crate) name: Token,
-    // pub(crate) superclass: Expr,
+    pub(crate) super_class: Option<Expr>,
     pub(crate) methods: Vec<Box<Stmt>>, // func
 }
 
@@ -73,10 +73,10 @@ impl Stmt {
         })
     }
 
-    pub fn class(class_name: Token, methods: Vec<Stmt>) -> Stmt {
+    pub fn class(class_name: Token, super_class: Option<Expr>, methods: Vec<Stmt>) -> Stmt {
         Stmt::Class(ClassStmtData {
             name: class_name,
-            // superclass: super_class,
+            super_class,
             methods: methods.into_iter().map(|e| Box::new(e)).collect(),
         })
     }

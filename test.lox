@@ -1,4 +1,4 @@
-class Person {
+class Animal {
     init(name, age) {
         this.name = name;
         this.age = age;
@@ -8,6 +8,22 @@ class Person {
     }
 }
 
-var p = Person("lisery", 100);
+class Cat < Animal {
+    say() {
+        super.say();
+        print "mew mew";
+    }
+}
 
-p.say();
+class Dog < Animal {
+    say() {
+        super.say();
+        print "wof wof";
+    }
+}
+
+var cat = Cat("aaa", 100);
+var dog = Dog("bbb", 23);
+
+cat.say();
+dog.say();

@@ -45,14 +45,20 @@ pub struct LoxClass {
     pub name: String,
     pub methods: HashMap<String, Rc<LoxFunction>>,
     pub constructor: Option<Rc<LoxFunction>>,
+    pub super_class: Option<Rc<LoxClass>>,
 }
 
 impl LoxClass {
-    pub fn new(name: &String, methods: HashMap<String, Rc<LoxFunction>>) -> Self {
+    pub fn new(
+        name: &String,
+        methods: HashMap<String, Rc<LoxFunction>>,
+        super_class: Option<Rc<LoxClass>>,
+    ) -> Self {
         let mut result = Self {
             name: name.clone(),
             methods,
             constructor: None,
+            super_class,
         };
 
         result.constructor = result.find_method(&"init".to_string()).map(|t| t.clone());
@@ -68,7 +74,17 @@ impl LoxClass {
     }
 
     pub fn find_method(&self, name: &String) -> Option<&Rc<LoxFunction>> {
-        self.methods.get(name)
+        let f = self.methods.get(name);
+        if let Some(_) = f {
+            return f;
+        }
+
+        if let Some(sc) = &self.super_class {
+            let method = sc.find_method(name);
+            return method;
+        }
+
+        return None;
     }
 }
 

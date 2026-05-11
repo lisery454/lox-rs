@@ -57,7 +57,7 @@ impl Parser {
         }
     }
 
-    // class_declaration_stmt -> 'class' identifier '{' fun_declaration_stmt* '}'
+    // class_declaration_stmt -> 'class' identifier ( '<' identifier )? '{' fun_declaration_stmt* '}'
     fn parse_class_declaration(&mut self) -> LoxResult<Stmt> {
         let name = self
             .consume(
@@ -65,6 +65,15 @@ impl Parser {
                 "Expect class name.",
             )?
             .clone();
+
+        let mut super_class = None;
+        if self.match_advance(|t| matches!(t, TokenType::Less)) {
+            let iden = self.consume(
+                |t| matches!(t, TokenType::Identifier(_)),
+                "Expect superclass name.",
+            )?;
+            super_class = Some(Expr::variable(iden.clone()));
+        }
 
         self.consume(
             |t| matches!(t, TokenType::LeftBrace),
@@ -81,7 +90,7 @@ impl Parser {
             "Expect '}' after class body.",
         )?;
 
-        Ok(Stmt::class(name, methods))
+        Ok(Stmt::class(name, super_class, methods))
     }
 
     /// fun_declaration_stmt -> 'fun' identifier '(' parameters? ')' block
@@ -494,7 +503,7 @@ impl Parser {
     }
 
     /// primary -> false | true | nil | number | string | identifier
-    ///             |  ( expression )
+    ///             |  ( expression ) | 'super' '.' identifier
     fn parse_primary(&mut self) -> LoxResult<Expr> {
         if self.match_advance(|t| matches!(t, TokenType::False)) {
             return Ok(Expr::literal(false));
@@ -524,6 +533,16 @@ impl Parser {
 
         if self.match_advance(|t| matches!(t, TokenType::This)) {
             return Ok(Expr::this(self.previous().unwrap().clone()));
+        }
+
+        if self.match_advance(|t| matches!(t, TokenType::Super)) {
+            let keyword = self.previous().unwrap().clone();
+            self.consume(|t| matches!(t, TokenType::Dot), "Expect '.' after 'super'.")?;
+            let method = self.consume(
+                |t| matches!(t, TokenType::Identifier(_)),
+                "Expect superclass method name.",
+            )?.clone();
+            return Ok(Expr::super_(keyword, method));
         }
 
         if self.match_advance(|t| matches!(t, TokenType::Identifier(_))) {
