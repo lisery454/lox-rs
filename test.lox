@@ -1,29 +1,7 @@
-class Animal {
-    init(name, age) {
-        this.name = name;
-        this.age = age;
-    }
-    say() {
-        print "I am " + this.name + ", and " + this.age + " ages";
-    }
+var drink = "Tea";
+var steep = 4;
+var cool = 2;
+
+if (cool == step) {
+    print drink;
 }
-
-class Cat < Animal {
-    say() {
-        super.say();
-        print "mew mew";
-    }
-}
-
-class Dog < Animal {
-    say() {
-        super.say();
-        print "wof wof";
-    }
-}
-
-var cat = Cat("aaa", 100);
-var dog = Dog("bbb", 23);
-
-cat.say();
-dog.say();

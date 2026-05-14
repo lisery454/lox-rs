@@ -6,7 +6,7 @@ ref: <https://craftinginterpreters.com/>
 
 ```shell
 cargo run -p lox-interpreter -- test.lox
-cargo run -p lox-compiler
+cargo run -p lox-compiler -- test.lox
 ```
 
 ## TODO
