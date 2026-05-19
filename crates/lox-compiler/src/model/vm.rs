@@ -4,10 +4,7 @@ use tabled::{builder::Builder, settings::Style};
 
 use crate::{
     error::LoxResult,
-    model::{
-        chunk::{Chunk, OpCode},
-        value::Value,
-    },
+    model::{chunk::Chunk, opcode::OpCode, value::Value},
 };
 
 const STACK_MAX: usize = 256;
@@ -72,6 +69,7 @@ impl VM {
         loop {
             // println!("{}", &self);
             let instruction = self.read_byte();
+            let line = self.get_chunk().get_line(self.ip);
             let code = OpCode::try_from(instruction)?;
             match code {
                 OpCode::Constant => {
@@ -85,27 +83,140 @@ impl VM {
                 }
                 OpCode::Negate => {
                     let v = self.stack_pop();
-                    self.stack_push(-v);
+                    if let Value::Number(n) = v {
+                        self.stack_push(Value::Number(-n));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a number.".into(),
+                            line: line,
+                        });
+                    }
                 }
                 OpCode::Add => {
                     let b = self.stack_pop();
                     let a = self.stack_pop();
-                    self.stack_push(a + b);
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Number(na + nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
                 }
                 OpCode::Subtract => {
                     let b = self.stack_pop();
                     let a = self.stack_pop();
-                    self.stack_push(a - b);
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Number(na - nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
                 }
                 OpCode::Multiply => {
                     let b = self.stack_pop();
                     let a = self.stack_pop();
-                    self.stack_push(a * b);
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Number(na * nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
                 }
                 OpCode::Divide => {
                     let b = self.stack_pop();
                     let a = self.stack_pop();
-                    self.stack_push(a / b);
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Number(na / nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
+                }
+                OpCode::Nil => {
+                    self.stack_push(Value::Nil);
+                }
+                OpCode::True => {
+                    self.stack_push(Value::Boolean(true));
+                }
+                OpCode::False => {
+                    self.stack_push(Value::Boolean(false));
+                }
+                OpCode::Not => {
+                    let v = self.stack_pop();
+                    match v {
+                        Value::Boolean(b) => self.stack_push(Value::Boolean(!b)),
+                        Value::Number(n) => {
+                            if n == 0.0 {
+                                self.stack_push(Value::Boolean(false));
+                            } else {
+                                self.stack_push(Value::Boolean(true));
+                            }
+                        }
+                        Value::Nil => self.stack_push(Value::Boolean(true)),
+                    }
+                }
+                OpCode::Equal => {
+                    let b = self.stack_pop();
+                    let a = self.stack_pop();
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Boolean(na == nb));
+                    } else if let Value::Boolean(na) = a
+                        && let Value::Boolean(nb) = b
+                    {
+                        self.stack_push(Value::Boolean(na == nb));
+                    } else if let Value::Nil = a
+                        && let Value::Nil = b
+                    {
+                        self.stack_push(Value::Boolean(true));
+                    } else {
+                        self.stack_push(Value::Boolean(false));
+                    }
+                }
+                OpCode::Greater => {
+                    let b = self.stack_pop();
+                    let a = self.stack_pop();
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Boolean(na > nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
+                }
+                OpCode::Less => {
+                    let b = self.stack_pop();
+                    let a = self.stack_pop();
+                    if let Value::Number(na) = a
+                        && let Value::Number(nb) = b
+                    {
+                        self.stack_push(Value::Boolean(na < nb));
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            message: "Operand must be a numbers.".into(),
+                            line: line,
+                        });
+                    }
                 }
             }
         }

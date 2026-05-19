@@ -1,7 +1,8 @@
 use crate::{
     error::LoxResult,
     model::{
-        chunk::{Chunk, OpCode},
+        chunk::Chunk,
+        opcode::OpCode,
         parse_rule::{ParseFnType, get_parse_rule},
         precedence::Precedence,
         token::{Token, TokenType},
@@ -142,12 +143,25 @@ impl Compiler {
             ParseFnType::Unary => self.unary(),
             ParseFnType::Binary => self.binary(),
             ParseFnType::Number => self.number(),
+            ParseFnType::Literal => self.literal(),
+        }
+    }
+
+    fn literal(&mut self) -> LoxResult<()> {
+        let typ = self.get_previous_token().typ;
+        match typ {
+            TokenType::False => self.emit_byte(OpCode::False),
+            TokenType::True => self.emit_byte(OpCode::True),
+            TokenType::Nil => self.emit_byte(OpCode::Nil),
+            _ => Err(crate::error::LoxError::CompileError(
+                "invalid literal type".into(),
+            )),
         }
     }
 
     fn number(&mut self) -> LoxResult<()> {
         let v = self.get_previous_token().lexeme.parse::<f64>()?;
-        self.emit_constant(v)?;
+        self.emit_constant(Value::Number(v))?;
         Ok(())
     }
 
@@ -162,6 +176,7 @@ impl Compiler {
         self.parse_precedence(Precedence::Unary)?;
         match op_typ {
             TokenType::Minus => self.emit_byte(OpCode::Negate),
+            TokenType::Bang => self.emit_byte(OpCode::Not),
             _ => {
                 return Err(crate::error::LoxError::CompileError(format!(
                     "invalid unary token type: {}",
@@ -181,6 +196,12 @@ impl Compiler {
             TokenType::Minus => self.emit_byte(OpCode::Subtract),
             TokenType::Star => self.emit_byte(OpCode::Multiply),
             TokenType::Slash => self.emit_byte(OpCode::Divide),
+            TokenType::BangEqual => self.emit_bytes(OpCode::Equal, OpCode::Not),
+            TokenType::EqualEqual => self.emit_byte(OpCode::Equal),
+            TokenType::Greater => self.emit_byte(OpCode::Greater),
+            TokenType::GreaterEqual => self.emit_bytes(OpCode::Less, OpCode::Not),
+            TokenType::Less => self.emit_byte(OpCode::Less),
+            TokenType::LessEqual => self.emit_bytes(OpCode::Greater, OpCode::Not),
             _ => {
                 return Err(crate::error::LoxError::CompileError(format!(
                     "invalid binary token type: {}",

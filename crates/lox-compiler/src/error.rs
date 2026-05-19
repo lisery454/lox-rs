@@ -9,8 +9,11 @@ pub enum LoxError {
     #[error("chunk error: {0}")]
     ChunkError(String),
 
-    #[error("runtime error: {0}")]
-    RuntimeError(String),
+    #[error("runtime error: [line {line}] Error, {message}")]
+    RuntimeError{
+        line: usize,
+        message: String,
+    },
 
     #[error("compile error: {0}")]
     CompileError(String),
