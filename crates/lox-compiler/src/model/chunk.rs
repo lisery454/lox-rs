@@ -41,11 +41,13 @@ impl Into<u8> for OpCode {
     }
 }
 
+#[derive(Clone)]
 struct LineStart {
     offset: usize,
-    line: u32,
+    line: usize,
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     pub(crate) code: RefCell<Vec<u8>>,
     pub(crate) constants: RefCell<ValueArray>,
@@ -61,7 +63,7 @@ impl Chunk {
         }
     }
 
-    pub fn write<T: Into<u8>>(&self, t: T, line: u32) {
+    pub fn write<T: Into<u8>>(&self, t: T, line: usize) {
         let val = t.into();
         self.code.borrow_mut().push(val);
 
@@ -75,7 +77,7 @@ impl Chunk {
         }
     }
 
-    pub fn get_line(&self, instruction_offset: usize) -> u32 {
+    pub fn get_line(&self, instruction_offset: usize) -> usize {
         // 找到第一个 offset 大于 instruction_offset 的位置
         let index = self
             .lines

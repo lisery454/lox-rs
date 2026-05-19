@@ -6,6 +6,7 @@ mod error;
 mod lox;
 mod model;
 mod scanner;
+mod compiler;
 
 fn main() -> LoxResult<()> {
     let args: Vec<String> = env::args().collect();

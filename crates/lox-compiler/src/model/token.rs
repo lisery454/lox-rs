@@ -1,8 +1,11 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use strum::Display;
+use strum::{Display, EnumCount, EnumIter, IntoEnumIterator};
 
-#[derive(Display, Clone, PartialEq, Debug, Eq, Hash, Copy)]
+use crate::error::LoxError;
+
+#[derive(Display, Clone, PartialEq, Debug, Eq, Hash, Copy, EnumCount, EnumIter)]
+#[repr(usize)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -51,6 +54,28 @@ pub enum TokenType {
     While,
 
     Eof,
+}
+
+impl Into<usize> for TokenType {
+    fn into(self) -> usize {
+        return self as usize;
+    }
+}
+
+impl TryFrom<usize> for TokenType {
+    type Error = LoxError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        for typ in TokenType::iter() {
+            if value == typ.clone().into() {
+                return Ok(typ);
+            }
+        }
+
+        return Err(LoxError::ChunkError(
+            "Fail to convert usize to TokenType".into(),
+        ));
+    }
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]

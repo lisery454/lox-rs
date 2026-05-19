@@ -15,7 +15,6 @@ impl Scanner {
     pub fn new(source: &String) -> Self {
         Self {
             source: source.chars().collect(),
-
             start: 0,
             current: 0,
             line: 1,
@@ -41,7 +40,7 @@ impl Scanner {
         Ok(())
     }
 
-    fn scan_token(&mut self) -> LoxResult<Token> {
+    pub fn scan_token(&mut self) -> LoxResult<Token> {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -228,6 +227,10 @@ impl Scanner {
     }
 
     fn error(&self, msg: &str) -> LoxError {
-        crate::error::LoxError::ScanError(msg.to_string())
+        crate::error::LoxError::ScanError {
+            message: msg.to_string(),
+            lexeme: self.source[self.start..self.current].iter().collect(),
+            line: self.line,
+        }
     }
 }

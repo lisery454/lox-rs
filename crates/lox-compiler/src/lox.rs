@@ -1,9 +1,9 @@
 use std::{
     fs,
-    io::{self, BufRead, Write},
+    io::{self, BufRead, Write}, iter::Scan,
 };
 
-use crate::{error::LoxResult, scanner::Scanner};
+use crate::{compiler::Compiler, error::LoxResult, model::vm::VM, scanner::Scanner};
 
 pub struct Lox {}
 
@@ -45,7 +45,10 @@ impl Lox {
     }
 
     fn run(&mut self, code: &String) -> LoxResult<()> {
-        Scanner::new(code).scan()?;
+        
+        let chunk = Compiler::new(code).compile()?;
+        println!("{}", chunk);
+        VM::new().interpret(chunk)?;
         Ok(())
     }
 }
