@@ -1,5 +1,5 @@
+use colored::*;
 use std::num::ParseFloatError;
-
 use thiserror::Error;
 
 pub type LoxResult<T> = std::result::Result<T, LoxError>;
@@ -10,13 +10,14 @@ pub enum LoxError {
     ChunkError(String),
 
     #[error("runtime error: [line {line}] Error, {message}")]
-    RuntimeError{
+    RuntimeError { line: usize, message: String },
+
+    #[error("compile error: [line {line}] Error at '{lexeme}', {message}")]
+    CompileError {
+        lexeme: String,
         line: usize,
         message: String,
     },
-
-    #[error("compile error: {0}")]
-    CompileError(String),
 
     #[error("scan error: [line {line}] Error at '{lexeme}', {message}")]
     ScanError {
@@ -34,6 +35,6 @@ pub enum LoxError {
     #[error("Parse error: {0}")]
     ParseError(#[from] ParseFloatError),
 
-    #[error("merge error: {}", errors.get(0).unwrap())]
+    #[error("{}", errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n").red())]
     MergeError { errors: Vec<LoxError> },
 }

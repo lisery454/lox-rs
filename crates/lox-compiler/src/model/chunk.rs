@@ -1,16 +1,7 @@
 use core::fmt;
 use std::cell::RefCell;
 
-use strum::IntoEnumIterator;
-use strum_macros::{Display, EnumIter};
-
-use crate::{
-    error::LoxError,
-    model::{
-        opcode::OpCode,
-        value::{Constant, Value},
-    },
-};
+use crate::model::{opcode::OpCode, value::Constant};
 
 #[derive(Clone)]
 struct LineStart {
@@ -81,7 +72,10 @@ impl fmt::Display for Chunk {
 
             match OpCode::try_from(code) {
                 Ok(code) => match code {
-                    OpCode::Constant => {
+                    OpCode::Constant
+                    | OpCode::DefineGlobal
+                    | OpCode::GetGlobal
+                    | OpCode::SetGlobal => {
                         write!(f, "{:04} ", offset)?;
                         let value_index = self.code.borrow()[offset + 1] as usize;
                         let constants = self.constants.borrow();

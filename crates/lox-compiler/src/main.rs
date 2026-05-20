@@ -16,9 +16,15 @@ fn main() -> LoxResult<()> {
         println!("Usage: rlox [script]");
         process::exit(64);
     } else if args.len() == 2 {
-        lox.run_file(&args[1])?;
+        if let Err(e) = lox.run_file(&args[1]) {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     } else {
-        lox.run_prompt()?;
+        if let Err(e) = lox.run_prompt() {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     }
     Ok(())
 }

@@ -21,6 +21,7 @@ impl Scanner {
         }
     }
 
+    #[allow(dead_code)]
     pub fn scan(&mut self) -> LoxResult<()> {
         let mut line = 0;
         loop {

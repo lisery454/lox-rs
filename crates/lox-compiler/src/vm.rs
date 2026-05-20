@@ -1,6 +1,8 @@
-use std::{collections::HashMap, fmt, rc::Rc};
-
-use tabled::{builder::Builder, settings::Style};
+use std::{
+    collections::HashMap,
+    fmt,
+    fs::{File, OpenOptions},
+};
 
 use crate::{
     error::LoxResult,
@@ -10,6 +12,8 @@ use crate::{
         value::{Constant, Obj, Value},
     },
 };
+use std::io::Write;
+use tabled::{builder::Builder, settings::Style};
 
 const STACK_MAX: usize = 256;
 
@@ -18,9 +22,12 @@ pub struct VM {
     ip: usize,
     stack: Vec<Value>,
 
+    log_file: Option<File>,
+
     // TODO 目前仍然不会注册这些分配的内存对象，仍旧会内存泄漏
     allocated_objects: Vec<*mut Obj>,
     strings: HashMap<String, *mut Obj>,
+    gloabls: HashMap<String, Value>,
 }
 
 impl VM {
@@ -31,7 +38,15 @@ impl VM {
             stack: Vec::new(),
             allocated_objects: Vec::new(),
             strings: HashMap::new(),
+            gloabls: HashMap::new(),
+            log_file: None,
         }
+    }
+
+    pub fn with_log(mut self, path: &str) -> LoxResult<Self> {
+        self.log_file = Some(OpenOptions::new().create(true).write(true).open(path)?);
+
+        Ok(self)
     }
 
     fn get_chunk(&self) -> &Chunk {
@@ -46,6 +61,15 @@ impl VM {
             panic!("stack over flow");
         }
         self.stack.push(v);
+    }
+
+    fn stack_peek(&self) -> &Value {
+        let v = self.stack.last();
+        if let Some(v) = v {
+            return v;
+        } else {
+            panic!("stack is empty");
+        }
     }
 
     fn stack_pop(&mut self) -> Value {
@@ -99,6 +123,10 @@ impl VM {
 
     pub fn run(&mut self) -> LoxResult<()> {
         loop {
+            let log = format!("{}", self);
+            if let Some(log_file) = &mut self.log_file {
+                writeln!(log_file, "{}", log)?;
+            }
             let instruction = self.read_byte();
             let line = self.get_chunk().get_line(self.ip);
             let code = OpCode::try_from(instruction)?;
@@ -108,8 +136,6 @@ impl VM {
                     self.stack_push(constant);
                 }
                 OpCode::Return => {
-                    let v = self.stack_pop();
-                    println!("value: {}", v);
                     return Ok(());
                 }
                 OpCode::Negate => {
@@ -232,8 +258,8 @@ impl VM {
                         && let Value::Obj(obj_b) = b
                     {
                         unsafe {
-                            let Obj::String(s_a) = &*obj_a;
-                            let Obj::String(s_b) = &*obj_b;
+                            let Obj::String(_) = &*obj_a;
+                            let Obj::String(_) = &*obj_b;
                             self.stack_push(Value::Boolean(obj_a == obj_b));
                         }
                     } else {
@@ -268,6 +294,74 @@ impl VM {
                         });
                     }
                 }
+                OpCode::Print => {
+                    let v = self.stack_pop();
+                    println!("{}", v);
+                }
+                OpCode::Pop => {
+                    let _ = self.stack_pop();
+                }
+                OpCode::DefineGlobal => {
+                    // val is in stack, ip is on DefineGlobal, name is on next pos of chunk.
+                    let val = self.stack_pop();
+                    let name = self.read_constant();
+
+                    if let Value::Obj(o) = name {
+                        unsafe {
+                            let Obj::String(name) = &*o;
+                            self.gloabls.insert(name.clone(), val);
+                        }
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            line,
+                            message: "not find name when define global".into(),
+                        });
+                    }
+                }
+                OpCode::GetGlobal => {
+                    let name = self.read_constant();
+                    if let Value::Obj(o) = name {
+                        unsafe {
+                            let Obj::String(name) = &*o;
+                            if let Some(val) = self.gloabls.get(name) {
+                                self.stack_push(val.clone());
+                            } else {
+                                return Err(crate::error::LoxError::RuntimeError {
+                                    line,
+                                    message: format!("Undefined variable: {}", name),
+                                });
+                            }
+                        }
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            line,
+                            message: "not find name when get global".into(),
+                        });
+                    }
+                }
+                OpCode::SetGlobal => {
+                    let new_val = self.stack_peek().clone();
+                    let name = self.read_constant();
+                    if let Value::Obj(o) = name {
+                        unsafe {
+                            let Obj::String(name) = &*o;
+
+                            if let Some(val) = self.gloabls.get_mut(name) {
+                                *val = new_val;
+                            } else {
+                                return Err(crate::error::LoxError::RuntimeError {
+                                    line,
+                                    message: format!("Undefined variable: {}", name),
+                                });
+                            }
+                        }
+                    } else {
+                        return Err(crate::error::LoxError::RuntimeError {
+                            line,
+                            message: "not find name when set global".into(),
+                        });
+                    }
+                }
             }
         }
     }
@@ -287,6 +381,12 @@ impl fmt::Display for VM {
             stack_str.push_str(&format!("{}\n", ele));
         }
         builder.push_column(["stack".to_string(), format!("{}", stack_str)]);
+
+        let mut global_str = String::new();
+        for ele in &self.gloabls {
+            global_str.push_str(&format!("{} - {}\n", ele.0, ele.1));
+        }
+        builder.push_column(["globals".to_string(), format!("{}", global_str)]);
 
         let table = builder.build().with(Style::modern_rounded()).to_string();
 

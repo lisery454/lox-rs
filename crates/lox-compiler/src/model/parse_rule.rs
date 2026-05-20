@@ -11,6 +11,7 @@ pub enum ParseFnType {
     Unary,
     Binary,
     Number,
+    Variable,
     Literal,
 }
 
@@ -96,7 +97,11 @@ const PARSE_RULES: LazyLock<[ParseRule; TokenType::COUNT]> = LazyLock::new(|| {
                 infix: Some(ParseFnType::Binary),
                 precedence: Precedence::Ccomparison,
             },
-            TokenType::Identifier => none_rule,
+            TokenType::Identifier => ParseRule {
+                prefix: Some(ParseFnType::Variable),
+                infix: None,
+                precedence: Precedence::None,
+            },
             TokenType::String => ParseRule {
                 prefix: Some(ParseFnType::String),
                 infix: None,

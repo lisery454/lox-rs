@@ -1,9 +1,5 @@
-use std::{
-    fmt::{self, write},
-    rc::Rc,
-};
+use std::fmt::{self};
 
-#[repr(C)]
 pub enum Obj {
     String(String),
 }
@@ -32,7 +28,12 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::Nil => write!(f, "<nil>"),
-            Value::Obj(obj) => write!(f, "<obj {:?}>", obj),
+            Value::Obj(obj) => unsafe {
+                let o = &**obj;
+                match o {
+                    Obj::String(s) => write!(f, "{}", s),
+                }
+            },
         }
     }
 }
