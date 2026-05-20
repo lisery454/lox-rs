@@ -1,10 +1,14 @@
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 use tabled::{builder::Builder, settings::Style};
 
 use crate::{
     error::LoxResult,
-    model::{chunk::Chunk, opcode::OpCode, value::Value},
+    model::{
+        chunk::Chunk,
+        opcode::OpCode,
+        value::{Obj, Value},
+    },
 };
 
 const STACK_MAX: usize = 256;
@@ -13,6 +17,9 @@ pub struct VM {
     chunk: Option<Chunk>,
     ip: usize,
     stack: Vec<Value>,
+
+    // TODO 目前仍然不会注册这些分配的内存对象，仍旧会内存泄漏
+    allocated_objects: Vec<*mut Obj>,
 }
 
 impl VM {
@@ -21,6 +28,7 @@ impl VM {
             chunk: None,
             ip: 0,
             stack: Vec::new(),
+            allocated_objects: Vec::new(),
         }
     }
 
@@ -55,7 +63,7 @@ impl VM {
 
     fn read_constant(&mut self) -> Value {
         let byte = self.read_byte();
-        let i = self.get_chunk().constants.borrow().values[byte as usize];
+        let i = self.get_chunk().constants.borrow().values[byte as usize].clone();
         i
     }
 
@@ -99,9 +107,18 @@ impl VM {
                         && let Value::Number(nb) = b
                     {
                         self.stack_push(Value::Number(na + nb));
+                    } else if let Value::Obj(obj_a) = a
+                        && let Value::Obj(obj_b) = b
+                    {
+                        unsafe {
+                            let Obj::String(s_a) = &*obj_a;
+                            let Obj::String(s_b) = &*obj_b;
+                            let s = format!("{s_a}{s_b}");
+                            self.stack_push(Value::Obj(Box::into_raw(Box::new(Obj::String(s)))));
+                        }
                     } else {
                         return Err(crate::error::LoxError::RuntimeError {
-                            message: "Operand must be a numbers.".into(),
+                            message: "Operands must be two numbers or two strings.".into(),
                             line: line,
                         });
                     }
@@ -169,6 +186,7 @@ impl VM {
                             }
                         }
                         Value::Nil => self.stack_push(Value::Boolean(true)),
+                        Value::Obj(_) => self.stack_push(Value::Boolean(false)),
                     }
                 }
                 OpCode::Equal => {
@@ -186,6 +204,14 @@ impl VM {
                         && let Value::Nil = b
                     {
                         self.stack_push(Value::Boolean(true));
+                    } else if let Value::Obj(obj_a) = a
+                        && let Value::Obj(obj_b) = b
+                    {
+                        unsafe {
+                            let Obj::String(s_a) = &*obj_a;
+                            let Obj::String(s_b) = &*obj_b;
+                            self.stack_push(Value::Boolean(s_a == s_b));
+                        }
                     } else {
                         self.stack_push(Value::Boolean(false));
                     }
@@ -241,5 +267,17 @@ impl fmt::Display for VM {
         let table = builder.build().with(Style::modern_rounded()).to_string();
 
         write!(f, "{}", table)
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        for obj in &self.allocated_objects {
+            if !obj.is_null() {
+                unsafe {
+                    drop(Box::from_raw(*obj));
+                }
+            }
+        }
     }
 }

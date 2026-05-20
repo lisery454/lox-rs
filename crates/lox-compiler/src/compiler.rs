@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     error::LoxResult,
     model::{
@@ -6,7 +8,7 @@ use crate::{
         parse_rule::{ParseFnType, get_parse_rule},
         precedence::Precedence,
         token::{Token, TokenType},
-        value::Value,
+        value::{Obj, Value},
     },
     scanner::Scanner,
 };
@@ -144,7 +146,15 @@ impl Compiler {
             ParseFnType::Binary => self.binary(),
             ParseFnType::Number => self.number(),
             ParseFnType::Literal => self.literal(),
+            ParseFnType::String => self.string(),
         }
+    }
+
+    fn string(&mut self) -> LoxResult<()> {
+        let token = self.get_previous_token();
+        let s = token.lexeme.trim_matches('"').to_string();
+        self.emit_constant(Value::Obj(Box::into_raw(Box::new(Obj::String(s)))));
+        Ok(())
     }
 
     fn literal(&mut self) -> LoxResult<()> {

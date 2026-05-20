@@ -6,6 +6,7 @@ use crate::model::{precedence::Precedence, token::TokenType};
 
 #[derive(Clone, Copy)]
 pub enum ParseFnType {
+    String,
     Grouping,
     Unary,
     Binary,
@@ -96,7 +97,11 @@ const PARSE_RULES: LazyLock<[ParseRule; TokenType::COUNT]> = LazyLock::new(|| {
                 precedence: Precedence::Ccomparison,
             },
             TokenType::Identifier => none_rule,
-            TokenType::String => none_rule,
+            TokenType::String => ParseRule {
+                prefix: Some(ParseFnType::String),
+                infix: None,
+                precedence: Precedence::None,
+            },
             TokenType::Number => ParseRule {
                 prefix: Some(ParseFnType::Number),
                 infix: None,
