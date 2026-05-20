@@ -8,7 +8,7 @@ use crate::{
         parse_rule::{ParseFnType, get_parse_rule},
         precedence::Precedence,
         token::{Token, TokenType},
-        value::{Obj, Value},
+        value::{Constant, Obj, Value},
     },
     scanner::Scanner,
 };
@@ -130,8 +130,8 @@ impl Compiler {
         Ok(())
     }
 
-    fn emit_constant(&mut self, value: Value) -> LoxResult<()> {
-        let index = self.current_chunk.add_constant(value);
+    fn emit_constant(&mut self, constant: Constant) -> LoxResult<()> {
+        let index = self.current_chunk.add_constant(constant);
         self.emit_bytes(OpCode::Constant, index)?;
         Ok(())
     }
@@ -153,7 +153,7 @@ impl Compiler {
     fn string(&mut self) -> LoxResult<()> {
         let token = self.get_previous_token();
         let s = token.lexeme.trim_matches('"').to_string();
-        self.emit_constant(Value::Obj(Box::into_raw(Box::new(Obj::String(s)))));
+        self.emit_constant(Constant::String(s));
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl Compiler {
 
     fn number(&mut self) -> LoxResult<()> {
         let v = self.get_previous_token().lexeme.parse::<f64>()?;
-        self.emit_constant(Value::Number(v))?;
+        self.emit_constant(Constant::Number(v))?;
         Ok(())
     }
 

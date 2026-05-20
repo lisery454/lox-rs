@@ -6,7 +6,10 @@ use strum_macros::{Display, EnumIter};
 
 use crate::{
     error::LoxError,
-    model::{opcode::OpCode, value::{Value, ValueArray}},
+    model::{
+        opcode::OpCode,
+        value::{Constant, Value},
+    },
 };
 
 #[derive(Clone)]
@@ -18,7 +21,7 @@ struct LineStart {
 #[derive(Clone)]
 pub struct Chunk {
     pub(crate) code: RefCell<Vec<u8>>,
-    pub(crate) constants: RefCell<ValueArray>,
+    pub(crate) constants: RefCell<Vec<Constant>>,
     lines: RefCell<Vec<LineStart>>,
 }
 
@@ -26,7 +29,7 @@ impl Chunk {
     pub fn new() -> Self {
         Self {
             code: RefCell::new(Vec::new()),
-            constants: RefCell::new(ValueArray::new()),
+            constants: RefCell::new(Vec::new()),
             lines: RefCell::new(Vec::new()),
         }
     }
@@ -60,8 +63,9 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&self, v: Value) -> u8 {
-        let index = self.constants.borrow_mut().write(v);
+    pub fn add_constant(&self, v: Constant) -> u8 {
+        let index = self.constants.borrow().len();
+        self.constants.borrow_mut().push(v);
         if index < 256 {
             return index as u8;
         }
@@ -81,7 +85,7 @@ impl fmt::Display for Chunk {
                         write!(f, "{:04} ", offset)?;
                         let value_index = self.code.borrow()[offset + 1] as usize;
                         let constants = self.constants.borrow();
-                        let value = constants.read(value_index);
+                        let value = constants.get(value_index);
                         if let Some(v) = value {
                             writeln!(f, "{}({})", code, v)?;
                         } else {

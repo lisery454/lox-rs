@@ -2,11 +2,12 @@ use std::{env, process};
 
 use crate::{error::LoxResult, lox::Lox};
 
+mod compiler;
 mod error;
 mod lox;
 mod model;
 mod scanner;
-mod compiler;
+mod vm;
 
 fn main() -> LoxResult<()> {
     let args: Vec<String> = env::args().collect();

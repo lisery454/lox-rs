@@ -1,4 +1,4 @@
-use std::{fmt, rc::Rc};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 use tabled::{builder::Builder, settings::Style};
 
@@ -7,7 +7,7 @@ use crate::{
     model::{
         chunk::Chunk,
         opcode::OpCode,
-        value::{Obj, Value},
+        value::{Constant, Obj, Value},
     },
 };
 
@@ -20,6 +20,7 @@ pub struct VM {
 
     // TODO 目前仍然不会注册这些分配的内存对象，仍旧会内存泄漏
     allocated_objects: Vec<*mut Obj>,
+    strings: HashMap<String, *mut Obj>,
 }
 
 impl VM {
@@ -29,6 +30,7 @@ impl VM {
             ip: 0,
             stack: Vec::new(),
             allocated_objects: Vec::new(),
+            strings: HashMap::new(),
         }
     }
 
@@ -63,8 +65,30 @@ impl VM {
 
     fn read_constant(&mut self) -> Value {
         let byte = self.read_byte();
-        let i = self.get_chunk().constants.borrow().values[byte as usize].clone();
-        i
+        let c = self
+            .get_chunk()
+            .constants
+            .borrow()
+            .get(byte as usize)
+            .unwrap()
+            .clone();
+
+        match c {
+            Constant::Number(n) => return Value::Number(n),
+            Constant::String(s) => {
+                return self.string_to_value(s);
+            }
+        }
+    }
+
+    fn string_to_value(&mut self, s: String) -> Value {
+        if let Some(p) = self.strings.get(&s) {
+            Value::Obj(*p)
+        } else {
+            let raw_ptr = Box::into_raw(Box::new(Obj::String(s.clone())));
+            self.strings.insert(s, raw_ptr);
+            Value::Obj(raw_ptr)
+        }
     }
 
     pub fn interpret(&mut self, chunk: Chunk) -> LoxResult<()> {
@@ -75,7 +99,6 @@ impl VM {
 
     pub fn run(&mut self) -> LoxResult<()> {
         loop {
-            // println!("{}", &self);
             let instruction = self.read_byte();
             let line = self.get_chunk().get_line(self.ip);
             let code = OpCode::try_from(instruction)?;
@@ -114,7 +137,8 @@ impl VM {
                             let Obj::String(s_a) = &*obj_a;
                             let Obj::String(s_b) = &*obj_b;
                             let s = format!("{s_a}{s_b}");
-                            self.stack_push(Value::Obj(Box::into_raw(Box::new(Obj::String(s)))));
+                            let v = self.string_to_value(s);
+                            self.stack_push(v);
                         }
                     } else {
                         return Err(crate::error::LoxError::RuntimeError {
@@ -210,7 +234,7 @@ impl VM {
                         unsafe {
                             let Obj::String(s_a) = &*obj_a;
                             let Obj::String(s_b) = &*obj_b;
-                            self.stack_push(Value::Boolean(s_a == s_b));
+                            self.stack_push(Value::Boolean(obj_a == obj_b));
                         }
                     } else {
                         self.stack_push(Value::Boolean(false));

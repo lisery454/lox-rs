@@ -16,6 +16,7 @@ impl fmt::Display for Obj {
     }
 }
 
+/// use in VM, is dynamic, need memory management
 #[derive(Clone)]
 #[repr(C)]
 pub enum Value {
@@ -36,22 +37,19 @@ impl fmt::Display for Value {
     }
 }
 
+/// use in Chunk, is static
 #[derive(Clone)]
-pub struct ValueArray {
-    pub(crate) values: Vec<Value>,
+#[repr(C)]
+pub enum Constant {
+    Number(f64),
+    String(String),
 }
 
-impl ValueArray {
-    pub fn new() -> Self {
-        Self { values: Vec::new() }
-    }
-
-    pub fn read(&self, i: usize) -> Option<&Value> {
-        self.values.get(i)
-    }
-
-    pub fn write(&mut self, t: Value) -> usize {
-        self.values.push(t);
-        self.values.len() - 1
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Constant::Number(n) => write!(f, "{n}"),
+            Constant::String(s) => write!(f, "{}", s),
+        }
     }
 }
