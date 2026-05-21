@@ -159,6 +159,10 @@ impl Compiler {
             self.print_stmt()?
         } else if self.match_(TokenType::If)? {
             self.if_stmt()?
+        } else if self.match_(TokenType::While)? {
+            self.while_stmt()?
+        } else if self.match_(TokenType::For)? {
+            self.for_stmt()?
         } else if self.match_(TokenType::LeftBrace)? {
             self.begin_scope();
             self.block()?;
@@ -167,6 +171,66 @@ impl Compiler {
             self.expression_stmt()?
         }
 
+        Ok(())
+    }
+
+    fn for_stmt(&mut self) -> LoxResult<()> {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+
+        if self.match_(TokenType::Semicolon)? {
+            // no initializer
+        } else if self.match_(TokenType::Var)? {
+            self.var_decl()?;
+        } else {
+            self.expression_stmt()?;
+        }
+
+        let mut loop_start = self.current_chunk.count();
+        let mut exit_jump_loc = None;
+        if !self.match_(TokenType::Semicolon)? {
+            self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+
+            exit_jump_loc = Some(self.emit_jump(OpCode::JumpIfFalse)?);
+            self.emit_byte(OpCode::Pop)?;
+        }
+
+        if !self.match_(TokenType::RightParen)? {
+            let increment_jump_loc = self.emit_jump(OpCode::Jump)?;
+            let increment_start = self.current_chunk.count();
+            self.expression()?;
+            self.emit_byte(OpCode::Pop)?;
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+
+            self.emit_loop(loop_start)?;
+            loop_start = increment_start;
+            self.patch_jump(increment_jump_loc)?;
+        }
+
+        self.stmt()?;
+        self.emit_loop(loop_start)?;
+
+        if let Some(exit_jump_loc) = exit_jump_loc {
+            self.patch_jump(exit_jump_loc)?;
+            self.emit_byte(OpCode::Pop)?;
+        }
+        self.end_scope()?;
+        Ok(())
+    }
+
+    fn while_stmt(&mut self) -> LoxResult<()> {
+        let loop_start = self.current_chunk.count();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let exit_jump_offset = self.emit_jump(OpCode::JumpIfFalse)?;
+        self.emit_byte(OpCode::Pop)?;
+        self.stmt()?;
+        self.emit_loop(loop_start)?;
+        self.patch_jump(exit_jump_offset)?;
+        self.emit_byte(OpCode::Pop)?;
         Ok(())
     }
 
@@ -386,6 +450,22 @@ impl Compiler {
         index
     }
 
+    fn emit_loop(&mut self, loop_start: usize) -> LoxResult<()> {
+        self.emit_byte(OpCode::RevJump)?;
+        let offset = self.current_chunk.count() + 2 - loop_start;
+        if offset > u16::MAX as usize {
+            return Err(crate::error::LoxError::CompileError {
+                line: self.get_previous_token().line,
+                lexeme: self.get_current_token().lexeme,
+                message: "Loop body too large.".to_string(),
+            });
+        }
+
+        self.emit_byte((offset >> 8) as u8 & 0xff)?;
+        self.emit_byte(offset as u8 & 0xff)?;
+        Ok(())
+    }
+
     fn emit_jump<T: Into<u8>>(&mut self, instruction: T) -> LoxResult<usize> {
         self.emit_byte(instruction)?;
         self.emit_byte(0xff)?;
@@ -394,9 +474,9 @@ impl Compiler {
         Ok(self.current_chunk.count() - 2)
     }
 
-    fn patch_jump(&mut self, offset: usize) -> LoxResult<()> {
-        // 在读取需要jump的offset的OpCode后，需要jump的offset
-        let jump = self.current_chunk.count() - offset - 2;
+    fn patch_jump(&mut self, loc: usize) -> LoxResult<()> {
+        // 在读取需要jump的loc的OpCode后，需要jump的offset
+        let jump = self.current_chunk.count() - loc - 2;
 
         if jump > u16::MAX as usize {
             return Err(crate::error::LoxError::CompileError {
@@ -407,9 +487,9 @@ impl Compiler {
         }
 
         self.current_chunk
-            .overwrite(offset, ((jump >> 8) & 0xff) as u8);
+            .overwrite(loc, ((jump >> 8) & 0xff) as u8);
         self.current_chunk
-            .overwrite(offset + 1, (jump & 0xff) as u8);
+            .overwrite(loc + 1, (jump & 0xff) as u8);
         Ok(())
     }
 }
@@ -425,7 +505,37 @@ impl Compiler {
             ParseFnType::Literal => self.literal(),
             ParseFnType::String => self.string(),
             ParseFnType::Variable => self.variable(can_assign),
+            ParseFnType::And => self.and(),
+            ParseFnType::Or => self.or(),
         }
+    }
+
+    fn and(&mut self) -> LoxResult<()> {
+        // 相当于if从句
+        let jump_offset = self.emit_jump(OpCode::JumpIfFalse)?;
+        // 如果左侧操作数为true，弹出stack顶部的操作数，继续运算
+        self.emit_byte(OpCode::Pop)?;
+        self.parse_precedence(Precedence::And)?;
+
+        // 否则直接跳跃到最后
+        self.patch_jump(jump_offset)?;
+        Ok(())
+    }
+
+    fn or(&mut self) -> LoxResult<()> {
+        // 相当于else从句
+        let else_jump_offset = self.emit_jump(OpCode::JumpIfFalse)?;
+        let end_jump_offset = self.emit_jump(OpCode::Jump)?;
+
+        self.patch_jump(else_jump_offset)?;
+        // 如果左侧操作数为false，弹出stack顶部的操作数，继续运算
+        self.emit_byte(OpCode::Pop)?;
+        self.parse_precedence(Precedence::Or)?;
+
+        // 否则直接跳跃到最后
+        self.patch_jump(end_jump_offset)?;
+
+        Ok(())
     }
 
     fn string(&mut self) -> LoxResult<()> {

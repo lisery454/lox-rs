@@ -67,8 +67,8 @@ impl Chunk {
         return self.code.borrow().len();
     }
 
-    pub fn overwrite<T: Into<u8>>(&self, offset: usize, t: T) {
-        self.code.borrow_mut()[offset] = t.into();
+    pub fn overwrite<T: Into<u8>>(&self, loc: usize, t: T) {
+        self.code.borrow_mut()[loc] = t.into();
     }
 
     pub fn with_ip(&self, ip: i32) -> ChunkWithIp<'_> {
@@ -123,9 +123,20 @@ impl<'a> fmt::Display for ChunkWithIp<'a> {
 
                         let byte = self.chunk.code.borrow()[offset + 1] as usize;
                         let byte2 = self.chunk.code.borrow()[offset + 2] as usize;
-                        let jump_to = ((byte << 8) | byte2) + offset;
+                        let jump_to = ((byte << 8) | byte2) + offset + 3;
 
-                        write!(f, "{}({})", code, jump_to + 3)?;
+                        write!(f, "{}({})", code, jump_to)?;
+                        offset += 3;
+                    }
+                    OpCode::RevJump => {
+                        write!(f, "{:04} ", offset)?;
+
+                        let byte = self.chunk.code.borrow()[offset + 1] as usize;
+                        let byte2 = self.chunk.code.borrow()[offset + 2] as usize;
+
+                        let jump_to = offset + 3 - ((byte << 8) | byte2);
+
+                        write!(f, "{}({})", code, jump_to)?;
                         offset += 3;
                     }
                     _ => {

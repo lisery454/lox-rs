@@ -376,6 +376,10 @@ impl VM {
                     let offset = (self.read_byte() as usize) << 8 | (self.read_byte() as usize);
                     self.ip += offset;
                 }
+                OpCode::RevJump => {
+                    let offset = (self.read_byte() as usize) << 8 | (self.read_byte() as usize);
+                    self.ip -= offset;
+                }
             }
         }
     }
