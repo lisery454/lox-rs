@@ -12,6 +12,8 @@ pub enum OpCode {
     Pop,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
     DefineGlobal,
     Equal,
     Greater,

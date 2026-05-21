@@ -44,7 +44,13 @@ impl VM {
     }
 
     pub fn with_log(mut self, path: &str) -> LoxResult<Self> {
-        self.log_file = Some(OpenOptions::new().create(true).write(true).open(path)?);
+        self.log_file = Some(
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)?,
+        );
 
         Ok(self)
     }
@@ -362,6 +368,15 @@ impl VM {
                         });
                     }
                 }
+                OpCode::GetLocal => {
+                    let slot = self.read_byte() as usize;
+                    let v = self.stack[slot].clone();
+                    self.stack_push(v);
+                }
+                OpCode::SetLocal => {
+                    let slot = self.read_byte() as usize;
+                    self.stack[slot] = self.stack_peek().clone();
+                }
             }
         }
     }
@@ -371,21 +386,26 @@ impl fmt::Display for VM {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut builder = Builder::new();
         if let Some(chunk) = &self.chunk {
-            builder.push_column(["chunk".to_string(), format!("{}", chunk)]);
+            builder.push_column([
+                "chunk".to_string(),
+                format!("{}", chunk.with_ip(self.ip as i32)),
+            ]);
         }
 
-        builder.push_column(["ip".to_string(), format!("{}", self.ip)]);
-
-        let mut stack_str = String::new();
-        for ele in &self.stack {
-            stack_str.push_str(&format!("{}\n", ele));
-        }
+        let stack_str = self
+            .stack
+            .iter()
+            .map(|ele| ele.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
         builder.push_column(["stack".to_string(), format!("{}", stack_str)]);
 
-        let mut global_str = String::new();
-        for ele in &self.gloabls {
-            global_str.push_str(&format!("{} - {}\n", ele.0, ele.1));
-        }
+        let global_str = self
+            .gloabls
+            .iter()
+            .map(|ele| format!("{}: {}", ele.0, ele.1))
+            .collect::<Vec<String>>()
+            .join("\n");
         builder.push_column(["globals".to_string(), format!("{}", global_str)]);
 
         let table = builder.build().with(Style::modern_rounded()).to_string();

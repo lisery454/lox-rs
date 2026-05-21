@@ -62,26 +62,50 @@ impl Chunk {
         }
         panic!("Too many constants in one chunk!");
     }
+
+    pub fn with_ip(&self, ip: i32) -> ChunkWithIp<'_> {
+        ChunkWithIp { ip, chunk: &self }
+    }
 }
 
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut offset: usize = 0;
-        while offset < self.code.borrow().len() {
-            let code = self.code.borrow()[offset];
+        write!(f, "{}", self.with_ip(-1))
+    }
+}
 
+pub struct ChunkWithIp<'a> {
+    pub ip: i32,
+    pub chunk: &'a Chunk,
+}
+
+impl<'a> fmt::Display for ChunkWithIp<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut offset: usize = 0;
+
+        while offset < self.chunk.code.borrow().len() {
+            let code = self.chunk.code.borrow()[offset];
+            let is_highlight = offset as i32 == self.ip;
+            if is_highlight {
+                write!(f, " -> ")?;
+            } else {
+                write!(f, "    ")?;
+            }
             match OpCode::try_from(code) {
                 Ok(code) => match code {
                     OpCode::Constant
                     | OpCode::DefineGlobal
                     | OpCode::GetGlobal
-                    | OpCode::SetGlobal => {
+                    | OpCode::SetGlobal
+                    | OpCode::GetLocal
+                    | OpCode::SetLocal => {
                         write!(f, "{:04} ", offset)?;
-                        let value_index = self.code.borrow()[offset + 1] as usize;
-                        let constants = self.constants.borrow();
+
+                        let value_index = self.chunk.code.borrow()[offset + 1] as usize;
+                        let constants = self.chunk.constants.borrow();
                         let value = constants.get(value_index);
                         if let Some(v) = value {
-                            writeln!(f, "{}({})", code, v)?;
+                            write!(f, "{}({})", code, v)?;
                         } else {
                             panic!("invalid constant index");
                         }
@@ -89,7 +113,8 @@ impl fmt::Display for Chunk {
                     }
                     _ => {
                         write!(f, "{:04} ", offset)?;
-                        writeln!(f, "{}", code)?;
+                        write!(f, "{}", code)?;
+
                         offset += 1;
                     }
                 },
@@ -97,6 +122,10 @@ impl fmt::Display for Chunk {
                     panic!("invalid op code: {}", code)
                 }
             };
+
+            if offset < self.chunk.code.borrow().len() {
+                writeln!(f, "")?;
+            }
         }
 
         Ok(())

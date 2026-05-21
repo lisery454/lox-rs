@@ -2,6 +2,7 @@ use crate::{
     error::{LoxError, LoxResult},
     model::{
         chunk::Chunk,
+        local::Local,
         opcode::OpCode,
         parse_rule::{ParseFnType, get_parse_rule},
         precedence::Precedence,
@@ -14,6 +15,10 @@ use crate::{
 pub struct Compiler {
     current: Option<Token>,
     previous: Option<Token>,
+
+    locals: Vec<Local>,
+    scope_depth: i32,
+
     scanner: Scanner,
     current_chunk: Chunk,
     errors: Vec<LoxError>,
@@ -27,6 +32,8 @@ impl Compiler {
             scanner: Scanner::new(source),
             current_chunk: Chunk::new(),
             errors: Vec::new(),
+            locals: Vec::new(),
+            scope_depth: 0,
         }
     }
 
@@ -72,7 +79,7 @@ impl Compiler {
     }
 
     fn var_decl(&mut self) -> LoxResult<()> {
-        let global_var_index = self.parse_var("Expect variable name.")?;
+        let global_var_index = self.parse_var_to_index("Expect variable name.")?;
 
         if self.match_(TokenType::Equal)? {
             self.expression()?;
@@ -90,8 +97,13 @@ impl Compiler {
         Ok(())
     }
 
-    fn parse_var(&mut self, msg: &str) -> LoxResult<u8> {
+    fn parse_var_to_index(&mut self, msg: &str) -> LoxResult<u8> {
         self.consume(TokenType::Identifier, msg)?;
+        // 局部变量直接返回，不需要向chunk添加数据，因为局部变量自动留在了stack中
+        if self.scope_depth > 0 {
+            self.declare_local_var()?;
+            return Ok(0);
+        }
         let p = self.get_previous_token();
         let s = p.lexeme;
         let index = self.add_constant(Constant::String(s));
@@ -99,15 +111,70 @@ impl Compiler {
     }
 
     fn define_var(&mut self, index: u8) -> LoxResult<()> {
+        // 局部变量直接返回，不需要定义
+        if self.scope_depth > 0 {
+            // 这里算定义完成，把深度赋给它
+            self.locals.last_mut().unwrap().depth = self.scope_depth;
+            return Ok(());
+        }
         self.emit_bytes(OpCode::DefineGlobal, index)
+    }
+
+    fn declare_local_var(&mut self) -> LoxResult<()> {
+        let name = self.get_previous_token();
+
+        for local in self.locals.iter().rev() {
+            // 如果还没初始化或者深度小于当前的深度了，就说明已离开当前作用域了
+            if local.depth != -1 && local.depth < self.scope_depth {
+                break;
+            }
+            if name.lexeme == local.token.lexeme {
+                return Err(LoxError::CompileError {
+                    lexeme: name.lexeme,
+                    line: name.line,
+                    message: "Already a variable with this name in this scope.".into(),
+                });
+            }
+        }
+
+        self.add_local(name)?;
+        Ok(())
+    }
+
+    fn add_local(&mut self, name: Token) -> LoxResult<()> {
+        if self.locals.len() > 255 {
+            return Err(LoxError::CompileError {
+                lexeme: name.lexeme,
+                line: name.line,
+                message: "Too many local variables in function.".into(),
+            });
+        }
+        // -1 depth 表示还没有初始化，只是声明
+        self.locals.push(Local::new(name, -1));
+        Ok(())
     }
 
     fn stmt(&mut self) -> LoxResult<()> {
         if self.match_(TokenType::Print)? {
-            self.print_stmt()
+            self.print_stmt()?
+        } else if self.match_(TokenType::LeftBrace)? {
+            self.begin_scope();
+            self.block()?;
+            self.end_scope()?;
         } else {
-            self.expression_stmt()
+            self.expression_stmt()?
         }
+
+        Ok(())
+    }
+
+    fn block(&mut self) -> LoxResult<()> {
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::Eof) {
+            self.declaration()?;
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")?;
+        Ok(())
     }
 
     fn synchronize(&mut self) -> LoxResult<()> {
@@ -164,7 +231,7 @@ impl Compiler {
             });
         };
 
-        let can_assign = prec <= Precedence::Assignment;
+        let can_assign = prec <= Precedence::Assignment; // 当前是否是赋值优先级作用域，如果是比如加号表达式，说明优先级比赋值高，说明不能赋值
         self.run_parse_fn(pft, can_assign)?;
 
         while prec <= get_parse_rule(self.get_current_token().typ).precedence {
@@ -181,12 +248,34 @@ impl Compiler {
             self.run_parse_fn(ift, can_assign)?;
         }
 
+        // 如果是赋值优先级作用域，并且跟着等号，但是却没有被其他人消耗掉，说明有问题
         if can_assign && self.match_(TokenType::Equal)? {
             return Err(crate::error::LoxError::CompileError {
                 line: self.get_previous_token().line,
                 lexeme: self.get_current_token().lexeme,
                 message: "Invalid assignment target.".to_string(),
             });
+        }
+
+        Ok(())
+    }
+}
+
+// scope
+impl Compiler {
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) -> LoxResult<()> {
+        self.scope_depth -= 1;
+
+        // 需要把局部变量从stack中弹出，因为局部变量是存在stack中的
+        while let Some(last_local) = self.locals.last()
+            && last_local.depth > self.scope_depth
+        {
+            self.emit_byte(OpCode::Pop)?;
+            self.locals.pop();
         }
 
         Ok(())
@@ -301,15 +390,48 @@ impl Compiler {
     }
 
     fn named_var(&mut self, name: Token, can_assign: bool) -> LoxResult<()> {
-        let i = self.add_constant(Constant::String(name.lexeme));
+        let get_op: OpCode;
+        let set_op: OpCode;
+        let index;
 
+        // 如果是局部变量
+        if let Some(i) = self.resolve_local(&name)? {
+            index = i;
+            get_op = OpCode::GetLocal;
+            set_op = OpCode::SetLocal;
+        }
+        // 如果是全局变量
+        else {
+            index = self.add_constant(Constant::String(name.lexeme));
+            get_op = OpCode::GetGlobal;
+            set_op = OpCode::SetGlobal;
+        }
+
+        // 如果当前仍旧是赋值优先级作用域，就可以赋值；不然就是获取值。
         if can_assign && self.match_(TokenType::Equal)? {
             self.expression()?;
-            self.emit_bytes(OpCode::SetGlobal, i)?;
+            self.emit_bytes(set_op, index)?;
         } else {
-            self.emit_bytes(OpCode::GetGlobal, i)?;
+            self.emit_bytes(get_op, index)?;
         }
         Ok(())
+    }
+
+    fn resolve_local(&self, name: &Token) -> LoxResult<Option<u8>> {
+        for (i, local) in self.locals.iter().enumerate() {
+            if local.token.lexeme == name.lexeme {
+                if local.depth == -1 {
+                    return Err(LoxError::CompileError {
+                        lexeme: name.lexeme.clone(),
+                        line: name.line,
+                        message: "Can't read local variable in its own initializer.".into(),
+                    });
+                }
+                return Ok(Some(i as u8));
+            }
+        }
+
+        return Ok(None);
     }
 
     fn literal(&mut self) -> LoxResult<()> {
