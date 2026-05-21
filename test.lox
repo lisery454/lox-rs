@@ -1,7 +1,8 @@
-var a = 1;
-{
-    var b = 2;
-    print a;
-    print b;
-    print a + b;
+var a = 10;
+var b = 20;
+
+if ( a > b ) {
+    print "a > b";
+}else {
+    print "a <= b";
 }

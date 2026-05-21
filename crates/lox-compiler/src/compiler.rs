@@ -157,6 +157,8 @@ impl Compiler {
     fn stmt(&mut self) -> LoxResult<()> {
         if self.match_(TokenType::Print)? {
             self.print_stmt()?
+        } else if self.match_(TokenType::If)? {
+            self.if_stmt()?
         } else if self.match_(TokenType::LeftBrace)? {
             self.begin_scope();
             self.block()?;
@@ -165,6 +167,28 @@ impl Compiler {
             self.expression_stmt()?
         }
 
+        Ok(())
+    }
+
+    fn if_stmt(&mut self) -> LoxResult<()> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let then_jump_offset = self.emit_jump(OpCode::JumpIfFalse)?;
+        {
+            self.emit_byte(OpCode::Pop)?; // 清除条件值
+            self.stmt()?;
+        }
+        let else_jump_offset = self.emit_jump(OpCode::Jump)?;
+        self.patch_jump(then_jump_offset)?;
+        {
+            self.emit_byte(OpCode::Pop)?; // 清除条件值
+            if self.match_(TokenType::Else)? {
+                self.stmt()?;
+            }
+        }
+        self.patch_jump(else_jump_offset)?;
         Ok(())
     }
 
@@ -360,6 +384,33 @@ impl Compiler {
     fn add_constant(&mut self, constant: Constant) -> u8 {
         let index = self.current_chunk.add_constant(constant);
         index
+    }
+
+    fn emit_jump<T: Into<u8>>(&mut self, instruction: T) -> LoxResult<usize> {
+        self.emit_byte(instruction)?;
+        self.emit_byte(0xff)?;
+        self.emit_byte(0xff)?;
+        // 返回的是记录jumpoffset指令的OpCode的offset
+        Ok(self.current_chunk.count() - 2)
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> LoxResult<()> {
+        // 在读取需要jump的offset的OpCode后，需要jump的offset
+        let jump = self.current_chunk.count() - offset - 2;
+
+        if jump > u16::MAX as usize {
+            return Err(crate::error::LoxError::CompileError {
+                line: self.get_previous_token().line,
+                lexeme: self.get_current_token().lexeme,
+                message: "Too much code to jump over.".to_string(),
+            });
+        }
+
+        self.current_chunk
+            .overwrite(offset, ((jump >> 8) & 0xff) as u8);
+        self.current_chunk
+            .overwrite(offset + 1, (jump & 0xff) as u8);
+        Ok(())
     }
 }
 

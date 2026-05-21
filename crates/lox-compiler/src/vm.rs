@@ -232,18 +232,7 @@ impl VM {
                 }
                 OpCode::Not => {
                     let v = self.stack_pop();
-                    match v {
-                        Value::Boolean(b) => self.stack_push(Value::Boolean(!b)),
-                        Value::Number(n) => {
-                            if n == 0.0 {
-                                self.stack_push(Value::Boolean(false));
-                            } else {
-                                self.stack_push(Value::Boolean(true));
-                            }
-                        }
-                        Value::Nil => self.stack_push(Value::Boolean(true)),
-                        Value::Obj(_) => self.stack_push(Value::Boolean(false)),
-                    }
+                    self.stack_push(Value::Boolean(!v.is_falsey()));
                 }
                 OpCode::Equal => {
                     let b = self.stack_pop();
@@ -376,6 +365,16 @@ impl VM {
                 OpCode::SetLocal => {
                     let slot = self.read_byte() as usize;
                     self.stack[slot] = self.stack_peek().clone();
+                }
+                OpCode::JumpIfFalse => {
+                    let offset = (self.read_byte() as usize) << 8 | (self.read_byte() as usize);
+                    if self.stack_peek().is_falsey() {
+                        self.ip += offset;
+                    }
+                }
+                OpCode::Jump => {
+                    let offset = (self.read_byte() as usize) << 8 | (self.read_byte() as usize);
+                    self.ip += offset;
                 }
             }
         }

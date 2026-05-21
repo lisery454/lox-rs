@@ -63,6 +63,14 @@ impl Chunk {
         panic!("Too many constants in one chunk!");
     }
 
+    pub fn count(&self) -> usize {
+        return self.code.borrow().len();
+    }
+
+    pub fn overwrite<T: Into<u8>>(&self, offset: usize, t: T) {
+        self.code.borrow_mut()[offset] = t.into();
+    }
+
     pub fn with_ip(&self, ip: i32) -> ChunkWithIp<'_> {
         ChunkWithIp { ip, chunk: &self }
     }
@@ -82,7 +90,6 @@ pub struct ChunkWithIp<'a> {
 impl<'a> fmt::Display for ChunkWithIp<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut offset: usize = 0;
-
         while offset < self.chunk.code.borrow().len() {
             let code = self.chunk.code.borrow()[offset];
             let is_highlight = offset as i32 == self.ip;
@@ -110,6 +117,16 @@ impl<'a> fmt::Display for ChunkWithIp<'a> {
                             panic!("invalid constant index");
                         }
                         offset += 2;
+                    }
+                    OpCode::JumpIfFalse | OpCode::Jump => {
+                        write!(f, "{:04} ", offset)?;
+
+                        let byte = self.chunk.code.borrow()[offset + 1] as usize;
+                        let byte2 = self.chunk.code.borrow()[offset + 2] as usize;
+                        let jump_to = ((byte << 8) | byte2) + offset;
+
+                        write!(f, "{}({})", code, jump_to + 3)?;
+                        offset += 3;
                     }
                     _ => {
                         write!(f, "{:04} ", offset)?;

@@ -25,6 +25,8 @@ pub enum OpCode {
     Not,
     Negate,
     Print,
+    JumpIfFalse,
+    Jump,
     Return,
 }
 

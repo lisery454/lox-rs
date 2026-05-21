@@ -22,6 +22,23 @@ pub enum Value {
     Obj(*mut Obj),
 }
 
+impl Value {
+    pub fn is_falsey(&self) -> bool {
+        match self {
+            Value::Boolean(b) => !*b,
+            Value::Number(n) => {
+                if *n == 0.0 {
+                    true
+                } else {
+                    false
+                }
+            }
+            Value::Nil => true,
+            Value::Obj(_) => false,
+        }
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

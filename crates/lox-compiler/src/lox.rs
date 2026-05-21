@@ -45,6 +45,7 @@ impl Lox {
     }
 
     fn run(&mut self, code: &String) -> LoxResult<()> {
+        // Scanner::new(code).scan()?;
         let chunk = Compiler::new(code).compile()?;
         VM::new().with_log("log.txt")?.interpret(chunk)?;
         Ok(())
