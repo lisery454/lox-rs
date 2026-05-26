@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+            "name": "root",
+			"path": "."
+		},
+        {
+            "name": "compiler",
+            "path": "./crates/lox-compiler"
+        },
+        {
+            "name": "interpreter",
+            "path": "./crates/lox-interpreter"
+        }
+    ],
+    "settings": {}
+}

@@ -12,4 +12,6 @@ cargo run -p lox-compiler -- test.lox
 
 ## TODO
 
-Bytecode Virtual Machine
+- function
+- gc
+- class
