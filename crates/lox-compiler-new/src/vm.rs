@@ -72,7 +72,7 @@ impl VM {
     }
 
     fn string_to_value(&mut self, s: String) -> Value {
-        let addr = self.memory.alloc(ObjectKind::String(s));
+        let addr = self.memory.alloc_string(s);
         Value::Object(addr)
     }
 

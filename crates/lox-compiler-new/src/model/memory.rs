@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::model::Value;
 
 pub type ObjAddr = usize;
@@ -14,6 +16,8 @@ pub enum ObjectKind {
 pub struct Memory {
     pub heap: Vec<Option<Object>>,
     pub stack: Vec<Value>,
+
+    pub string_pool: HashMap<String, ObjAddr>,
 }
 
 impl Memory {
@@ -23,6 +27,7 @@ impl Memory {
         Self {
             heap: Vec::new(),
             stack: Vec::new(),
+            string_pool: HashMap::new(),
         }
     }
 
@@ -64,6 +69,18 @@ impl Memory {
         // 简易实现：直接推入 heap 数组末尾（后续可扩展：优先复用空槽位）
         let addr = self.heap.len();
         self.heap.push(Some(obj));
+        addr
+    }
+
+    pub fn alloc_string(&mut self, s: String) -> ObjAddr {
+        if let Some(&addr) = self.string_pool.get(&s) {
+            return addr;
+        }
+
+        let addr = self.alloc(ObjectKind::String(s.clone()));
+
+        self.string_pool.insert(s, addr);
+
         addr
     }
 }
