@@ -1,21 +1,17 @@
 mod chunk;
-mod compiler;
 mod constant;
+mod memory;
 mod opcode;
 mod parse_rule;
 mod precedence;
-mod scanner;
 mod token;
 mod value;
-mod vm;
 
 pub use chunk::*;
-pub use compiler::*;
 pub use constant::*;
+pub use memory::*;
 pub use opcode::*;
 pub use parse_rule::*;
 pub use precedence::*;
-pub use scanner::*;
 pub use token::*;
 pub use value::*;
-pub use vm::*;

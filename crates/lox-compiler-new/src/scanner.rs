@@ -1,6 +1,6 @@
 use anyhow::bail;
 
-use crate::model::token::{KEYWORDS, Token, TokenType};
+use crate::model::{KEYWORDS, Token, TokenType};
 
 pub struct Scanner {
     source: Vec<char>,

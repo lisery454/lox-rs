@@ -4,24 +4,23 @@ use anyhow::{Ok, Result, bail};
 use std::io::Write;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::model::{Chunk, Constant, OpCode, Value};
+use crate::model::{Chunk, Constant, Memory, ObjectKind, OpCode, Value};
 
 pub struct VM {
     chunk: Option<Chunk>,
     ip: usize,
-    stack: Vec<Value>,
+
     log_file: Option<File>,
+    memory: Memory,
 }
 
 impl VM {
-    const STACK_MAX: usize = 256;
-
     pub fn new() -> Self {
         VM {
             chunk: None,
             ip: 0,
-            stack: Vec::new(),
             log_file: None,
+            memory: Memory::new(),
         }
     }
 
@@ -50,31 +49,6 @@ impl VM {
         self.run()
     }
 
-    fn stack_push(&mut self, v: Value) {
-        if self.stack.len() >= Self::STACK_MAX {
-            panic!("stack over flow");
-        }
-        self.stack.push(v);
-    }
-
-    fn stack_peek(&self) -> &Value {
-        let v = self.stack.last();
-        if let Some(v) = v {
-            return v;
-        } else {
-            panic!("stack is empty");
-        }
-    }
-
-    fn stack_pop(&mut self) -> Value {
-        let v = self.stack.pop();
-        if let Some(v) = v {
-            return v;
-        } else {
-            panic!("stack is empty");
-        }
-    }
-
     fn read_byte(&self) -> u8 {
         let byte = self.get_chunk().code[self.ip];
         byte
@@ -85,18 +59,21 @@ impl VM {
         line
     }
 
-    fn read_constant(&self) -> Value {
-        let index = self.read_byte();
-        let c = self
-            .get_chunk()
-            .constants
-            .get(index as usize)
-            .unwrap()
-            .clone();
+    fn read_constant(&mut self) -> Value {
+        let index = self.read_byte() as usize;
+        let constant = &self.get_chunk().constants[index];
 
-        match c {
-            Constant::Number(n) => return Value::Number(n),
+        match constant {
+            Constant::Number(n) => return Value::Number(*n),
+            Constant::String(s) => {
+                return self.string_to_value(s.clone());
+            }
         }
+    }
+
+    fn string_to_value(&mut self, s: String) -> Value {
+        let addr = self.memory.alloc(ObjectKind::String(s));
+        Value::Object(addr)
     }
 
     fn run(&mut self) -> Result<()> {
@@ -116,120 +93,151 @@ impl VM {
                 OpCode::Constant => {
                     let constant = self.read_constant();
                     self.ip += 1;
-                    self.stack_push(constant);
+                    self.memory.stack_push(constant);
                 }
                 OpCode::Negate => {
-                    let v = self.stack_pop();
+                    let v = self.memory.stack_pop();
                     if let Value::Number(n) = v {
-                        self.stack_push(Value::Number(-n));
+                        self.memory.stack_push(Value::Number(-n));
                     } else {
                         bail!("negate op must be used on a number, in line {}", line);
                     }
                 }
                 OpCode::Add => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Number(na + nb));
+                        self.memory.stack_push(Value::Number(na + nb));
+                    } else if let Value::Object(addr_a) = a
+                        && let Value::Object(addr_b) = b
+                    {
+                        let a = self.memory.get_obj(addr_a);
+                        let b = self.memory.get_obj(addr_b);
+                        if let Some(a) = a
+                            && let Some(b) = b
+                            && let ObjectKind::String(s_a) = a
+                            && let ObjectKind::String(s_b) = b
+                        {
+                            let s = format!("{s_a}{s_b}");
+                            let v = self.string_to_value(s);
+                            self.memory.stack_push(v);
+                        } else {
+                            bail!("add op must be used on two same obj, in line {}", line);
+                        }
                     } else {
-                        bail!("add op must be used on two numbers, in line {}", line);
+                        bail!("invalid add op usage, in line {}", line);
                     }
                 }
                 OpCode::Subtract => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Number(na - nb));
+                        self.memory.stack_push(Value::Number(na - nb));
                     } else {
                         bail!("sub op must be used on two numbers, in line {}", line);
                     }
                 }
                 OpCode::Multiply => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Number(na * nb));
+                        self.memory.stack_push(Value::Number(na * nb));
                     } else {
                         bail!("multiply op must be used on two numbers, in line {}", line);
                     }
                 }
                 OpCode::Divide => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Number(na / nb));
+                        self.memory.stack_push(Value::Number(na / nb));
                     } else {
                         bail!("divide op must be used on two numbers, in line {}", line);
                     }
                 }
                 OpCode::Nil => {
-                    self.stack_push(Value::Nil);
+                    self.memory.stack_push(Value::Nil);
                 }
                 OpCode::True => {
-                    self.stack_push(Value::Boolean(true));
+                    self.memory.stack_push(Value::Boolean(true));
                 }
                 OpCode::False => {
-                    self.stack_push(Value::Boolean(false));
+                    self.memory.stack_push(Value::Boolean(false));
                 }
                 OpCode::Not => {
-                    let v = self.stack_pop();
-                    self.stack_push(Value::Boolean(v.is_falsey()));
+                    let v = self.memory.stack_pop();
+                    self.memory
+                        .stack_push(Value::Boolean(!v.to_bool(&self.memory)));
                 }
                 OpCode::Equal => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Boolean(na == nb));
+                        self.memory.stack_push(Value::Boolean(na == nb));
                     } else if let Value::Boolean(na) = a
                         && let Value::Boolean(nb) = b
                     {
-                        self.stack_push(Value::Boolean(na == nb));
+                        self.memory.stack_push(Value::Boolean(na == nb));
                     } else if let Value::Nil = a
                         && let Value::Nil = b
                     {
-                        self.stack_push(Value::Boolean(true));
+                        self.memory.stack_push(Value::Boolean(true));
+                    } else if let Value::Object(addr_a) = a
+                        && let Value::Object(addr_b) = b
+                    {
+                        let a = self.memory.get_obj(addr_a);
+                        let b = self.memory.get_obj(addr_b);
+                        if let Some(a) = a
+                            && let Some(b) = b
+                            && let ObjectKind::String(s_a) = a
+                            && let ObjectKind::String(s_b) = b
+                        {
+                            self.memory.stack_push(Value::Boolean(s_a == s_b));
+                        } else {
+                            self.memory.stack_push(Value::Boolean(false));
+                        }
                     } else {
-                        self.stack_push(Value::Boolean(false));
+                        self.memory.stack_push(Value::Boolean(false));
                     }
                 }
                 OpCode::Greater => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Boolean(na > nb));
+                        self.memory.stack_push(Value::Boolean(na > nb));
                     } else {
                         bail!("Operand must be a numbers, in line {}", line);
                     }
                 }
                 OpCode::Less => {
-                    let b = self.stack_pop();
-                    let a = self.stack_pop();
+                    let b = self.memory.stack_pop();
+                    let a = self.memory.stack_pop();
                     if let Value::Number(na) = a
                         && let Value::Number(nb) = b
                     {
-                        self.stack_push(Value::Boolean(na < nb));
+                        self.memory.stack_push(Value::Boolean(na < nb));
                     } else {
                         bail!("Operand must be a numbers, in line {}", line);
                     }
                 }
                 OpCode::Print => {
-                    let v = self.stack_pop();
-                    println!("{}", v);
+                    let v = self.memory.stack_pop();
+                    v.print(&self.memory);
                 }
                 OpCode::Pop => {
-                    let _ = self.stack_pop();
+                    let _ = self.memory.stack_pop();
                 }
                 _ => {}
             }
@@ -248,6 +256,7 @@ impl std::fmt::Display for VM {
         }
 
         let stack_str = self
+            .memory
             .stack
             .iter()
             .map(|ele| ele.to_string())

@@ -6,9 +6,14 @@ use std::{
 
 use anyhow::Result;
 
-use crate::model::{Compiler, VM};
-
+mod compiler;
 mod model;
+mod scanner;
+mod vm;
+
+pub use compiler::*;
+pub use scanner::*;
+pub use vm::*;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

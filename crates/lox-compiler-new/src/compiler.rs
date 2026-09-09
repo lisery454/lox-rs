@@ -1,7 +1,8 @@
 use anyhow::bail;
 
-use crate::model::{
-    Chunk, Constant, OpCode, ParseFnType, Precedence, Scanner, Token, TokenType, get_parse_rule,
+use crate::{
+    Scanner,
+    model::{Chunk, Constant, OpCode, ParseFnType, Precedence, Token, TokenType, get_parse_rule},
 };
 
 pub struct Compiler {
@@ -218,11 +219,12 @@ impl Compiler {
             ParseFnType::Unary => self.unary(chunk),
             ParseFnType::Binary => self.binary(chunk),
             ParseFnType::Number => self.number(chunk),
-            _ => todo!(), // ParseFnType::Literal => self.literal(),
-                          // ParseFnType::String => self.string(),
-                          // ParseFnType::Variable => self.variable(can_assign),
-                          // ParseFnType::And => self.and(),
-                          // ParseFnType::Or => self.or(),
+            ParseFnType::Literal => self.literal(chunk),
+            ParseFnType::String => self.string(chunk),
+            // ParseFnType::And => self.and(chunk),
+            // ParseFnType::Or => self.or(chunk),
+            // ParseFnType::Variable => self.variable(can_assign),
+            _ => todo!(),
         }
     }
 
@@ -267,6 +269,26 @@ impl Compiler {
         Ok(())
     }
 
+    fn literal(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let t = self.get_previous_token().clone();
+        let typ = t.typ;
+        match typ {
+            TokenType::False => self.emit_byte(chunk, OpCode::False),
+            TokenType::True => self.emit_byte(chunk, OpCode::True),
+            TokenType::Nil => self.emit_byte(chunk, OpCode::Nil),
+            _ => {
+                bail!(
+                    "invalid literal type: {}, on word {}, in line {}",
+                    typ,
+                    t.lexeme,
+                    t.line
+                )
+            }
+        }
+
+        Ok(())
+    }
+
     fn number(&self, chunk: &mut Chunk) -> anyhow::Result<()> {
         let v = self.get_previous_token().lexeme.parse::<f64>()?;
         self.emit_constant(chunk, Constant::Number(v));
@@ -278,6 +300,14 @@ impl Compiler {
         self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
         Ok(())
     }
+
+    fn string(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let token = self.get_previous_token().clone();
+        let s = token.lexeme.trim_matches('"').to_string();
+        self.emit_constant(chunk, Constant::String(s));
+        Ok(())
+    }
+
     fn unary(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
         let t = self.get_previous_token().clone();
         let op_typ = t.typ;
