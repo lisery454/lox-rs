@@ -1,17 +1,21 @@
 {
-	"folders": [
-		{
-            "name": "root",
-			"path": "."
-		},
-        {
-            "name": "compiler",
-            "path": "./crates/lox-compiler"
-        },
-        {
-            "name": "interpreter",
-            "path": "./crates/lox-interpreter"
-        }
-    ],
-    "settings": {}
+  "folders": [
+    {
+      "name": "root",
+      "path": ".",
+    },
+    {
+      "name": "compiler",
+      "path": "./crates/lox-compiler",
+    },
+    {
+      "name": "compiler-new",
+      "path": "./crates/lox-compiler-new",
+    },
+    {
+      "name": "interpreter",
+      "path": "./crates/lox-interpreter",
+    },
+  ],
+  "settings": {},
 }
