@@ -1,5 +1,5 @@
-if (2 > 1) {
-    print "then";
-} else {
-    print "else";
+var i = 0;
+while(i < 10) {
+    print "hello";
+    i = i + 1;
 }

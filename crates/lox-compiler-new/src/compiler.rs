@@ -165,10 +165,10 @@ impl Compiler {
             self.print_stmt(chunk)?
         } else if self.match_(TokenType::If) {
             self.if_stmt(chunk)?
-        // } else if self.match_(TokenType::While) {
-        //     self.while_stmt()?
-        // } else if self.match_(TokenType::For) {
-        //     self.for_stmt()?
+        } else if self.match_(TokenType::While) {
+            self.while_stmt(chunk)?
+        } else if self.match_(TokenType::For) {
+            self.for_stmt(chunk)?
         } else if self.match_(TokenType::LeftBrace) {
             self.begin_scope();
             self.block(chunk)?;
@@ -177,6 +177,66 @@ impl Compiler {
             self.expression_stmt(chunk)?;
         }
 
+        Ok(())
+    }
+
+    fn while_stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let loop_start = chunk.count();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+        self.expression(chunk)?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let exit_jump_offset = self.emit_jump(chunk, OpCode::JumpIfFalse)?;
+        self.emit_byte(chunk, OpCode::Pop);
+        self.stmt(chunk)?;
+        self.emit_loop(chunk, loop_start)?;
+        self.patch_jump(chunk, exit_jump_offset)?;
+        self.emit_byte(chunk, OpCode::Pop);
+        Ok(())
+    }
+
+    fn for_stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+
+        if self.match_(TokenType::Semicolon) {
+            // no initializer
+        } else if self.match_(TokenType::Var) {
+            self.var_decl(chunk)?;
+        } else {
+            self.expression_stmt(chunk)?;
+        }
+
+        let mut loop_start = chunk.count();
+        let mut exit_jump_loc = None;
+        if !self.match_(TokenType::Semicolon) {
+            self.expression(chunk)?;
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+
+            exit_jump_loc = Some(self.emit_jump(chunk, OpCode::JumpIfFalse)?);
+            self.emit_byte(chunk, OpCode::Pop);
+        }
+
+        if !self.match_(TokenType::RightParen) {
+            let increment_jump_loc = self.emit_jump(chunk, OpCode::Jump)?;
+            let increment_start = chunk.count();
+            self.expression(chunk)?;
+            self.emit_byte(chunk, OpCode::Pop);
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+
+            self.emit_loop(chunk, loop_start)?;
+            loop_start = increment_start;
+            self.patch_jump(chunk, increment_jump_loc)?;
+        }
+
+        self.stmt(chunk)?;
+        self.emit_loop(chunk, loop_start)?;
+
+        if let Some(exit_jump_loc) = exit_jump_loc {
+            self.patch_jump(chunk, exit_jump_loc)?;
+            self.emit_byte(chunk, OpCode::Pop);
+        }
+        self.end_scope(chunk)?;
         Ok(())
     }
 
@@ -324,6 +384,22 @@ impl Compiler {
         index
     }
 
+    fn emit_loop(&mut self, chunk: &mut Chunk, loop_start: usize) -> anyhow::Result<()> {
+        self.emit_byte(chunk, OpCode::RevJump);
+        let offset = chunk.count() + 2 - loop_start;
+        if offset > u16::MAX as usize {
+            bail!(
+                "Loop body too large, on word {}, in line {}",
+                self.get_current_token().lexeme,
+                self.get_previous_token().line
+            );
+        }
+
+        self.emit_byte(chunk, (offset >> 8) as u8 & 0xff);
+        self.emit_byte(chunk, offset as u8 & 0xff);
+        Ok(())
+    }
+
     fn emit_jump<T: Into<u8>>(
         &mut self,
         chunk: &mut Chunk,
@@ -370,9 +446,8 @@ impl Compiler {
             ParseFnType::Literal => self.literal(chunk),
             ParseFnType::String => self.string(chunk),
             ParseFnType::Variable => self.variable(chunk, can_assign),
-            // ParseFnType::And => self.and(chunk),
-            // ParseFnType::Or => self.or(chunk),
-            _ => todo!(),
+            ParseFnType::And => self.and(chunk),
+            ParseFnType::Or => self.or(chunk),
         }
     }
 
@@ -413,6 +488,34 @@ impl Compiler {
                 self.get_previous_token().line
             );
         }
+
+        Ok(())
+    }
+
+    fn and(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        // 相当于if从句
+        let jump_offset = self.emit_jump(chunk, OpCode::JumpIfFalse)?;
+        // 如果左侧操作数为true，弹出stack顶部的操作数，继续运算
+        self.emit_byte(chunk, OpCode::Pop);
+        self.parse_precedence(chunk, Precedence::And)?;
+
+        // 否则直接跳跃到最后
+        self.patch_jump(chunk, jump_offset)?;
+        Ok(())
+    }
+
+    fn or(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        // 相当于else从句
+        let else_jump_offset = self.emit_jump(chunk, OpCode::JumpIfFalse)?;
+        let end_jump_offset = self.emit_jump(chunk, OpCode::Jump)?;
+
+        self.patch_jump(chunk, else_jump_offset)?;
+        // 如果左侧操作数为false，弹出stack顶部的操作数，继续运算
+        self.emit_byte(chunk, OpCode::Pop);
+        self.parse_precedence(chunk, Precedence::Or)?;
+
+        // 否则直接跳跃到最后
+        self.patch_jump(chunk, end_jump_offset)?;
 
         Ok(())
     }

@@ -255,6 +255,271 @@ mod tests {
         assert_eq!(run_code(code).trim(), "a\nb");
     }
 
+    // ---------- while 循环 ----------
+
+    #[test]
+    fn test_while_basic_count() {
+        let code = concat!(
+            "var i = 0;\n",
+            "while (i < 5) {\n",
+            "    print i;\n",
+            "    i = i + 1;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "0\n1\n2\n3\n4");
+    }
+
+    #[test]
+    fn test_while_falsey_condition_skips_body() {
+        // false、0、nil 均为 falsy，循环体一次也不执行
+        assert_eq!(run_code("while (false) { print \"no\"; }").trim(), "");
+        assert_eq!(run_code("while (0) { print \"no\"; }").trim(), "");
+        assert_eq!(run_code("while (nil) { print \"no\"; }").trim(), "");
+    }
+
+    #[test]
+    fn test_while_single_statement_body() {
+        // 循环体是单条语句，可省略大括号
+        let code = concat!("var i = 0;\nwhile (i < 3) i = i + 1;\nprint i;");
+        assert_eq!(run_code(code).trim(), "3");
+    }
+
+    #[test]
+    fn test_while_with_local_var_in_body() {
+        // 每次迭代进入新的块作用域，局部变量 x 不残留
+        let code = concat!(
+            "var i = 0;\n",
+            "while (i < 3) {\n",
+            "    var x = i * 2;\n",
+            "    print x;\n",
+            "    i = i + 1;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "0\n2\n4");
+    }
+
+    #[test]
+    fn test_while_decrement_counter() {
+        // 递减循环，验证 > 比较与减法
+        let code = concat!(
+            "var i = 3;\n",
+            "while (i > 0) {\n",
+            "    print i;\n",
+            "    i = i - 1;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "3\n2\n1");
+    }
+
+    #[test]
+    fn test_nested_while() {
+        // 双层 while，内层用局部变量 j
+        let code = concat!(
+            "var i = 0;\n",
+            "while (i < 3) {\n",
+            "    var j = 0;\n",
+            "    while (j < 2) {\n",
+            "        print i * 10 + j;\n",
+            "        j = j + 1;\n",
+            "    }\n",
+            "    i = i + 1;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "0\n1\n10\n11\n20\n21");
+    }
+
+    // ---------- for 循环 ----------
+
+    #[test]
+    fn test_for_basic() {
+        // 标准三子句 for：初始化、条件、增量
+        let code = concat!(
+            "for (var i = 0; i < 3; i = i + 1) {\n",
+            "    print i;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "0\n1\n2");
+    }
+
+    #[test]
+    fn test_for_single_statement_body() {
+        // 循环体单条语句省略大括号
+        assert_eq!(
+            run_code("for (var i = 0; i < 3; i = i + 1) print i;").trim(),
+            "0\n1\n2"
+        );
+    }
+
+    #[test]
+    fn test_for_without_initializer() {
+        // 省略初始化子句，由外部变量驱动
+        let code = concat!(
+            "var i = 1;\n",
+            "for (; i < 4; i = i + 1) {\n",
+            "    print i;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "1\n2\n3");
+    }
+
+    #[test]
+    fn test_for_declared_var_does_not_leak_outside() {
+        // for 中用 var 声明的变量是局部变量，限循环内，并遮蔽外层同名全局变量
+        let code = concat!(
+            "var i = 99;\n",
+            "for (var i = 0; i < 3; i = i + 1) {\n",
+            "    print i;\n",
+            "}\n",
+            "print i;"
+        );
+        assert_eq!(run_code(code).trim(), "0\n1\n2\n99");
+    }
+
+    #[test]
+    fn test_for_decrement() {
+        let code = concat!(
+            "for (var i = 5; i > 0; i = i - 1) {\n",
+            "    print i;\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "5\n4\n3\n2\n1");
+    }
+
+    #[test]
+    fn test_nested_for() {
+        // 双层 for，内层变量用完即弹栈，互不干扰
+        let code = concat!(
+            "for (var i = 1; i <= 3; i = i + 1) {\n",
+            "    for (var j = 1; j <= 2; j = j + 1) {\n",
+            "        print i * 10 + j;\n",
+            "    }\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "11\n12\n21\n22\n31\n32");
+    }
+
+    #[test]
+    fn test_for_updates_outer_variable() {
+        // 循环体内访问外层全局变量
+        let code = concat!(
+            "var n = 0;\n",
+            "for (var i = 0; i < 3; i = i + 1) {\n",
+            "    n = n + 100;\n",
+            "}\n",
+            "print n;"
+        );
+        assert_eq!(run_code(code).trim(), "300");
+    }
+
+    // ---------- and 运算符 ----------
+
+    #[test]
+    fn test_and_truth_table() {
+        assert_eq!(run_code("print true and true;").trim(), "true");
+        assert_eq!(run_code("print true and false;").trim(), "false");
+        assert_eq!(run_code("print false and true;").trim(), "false");
+        assert_eq!(run_code("print false and false;").trim(), "false");
+    }
+
+    #[test]
+    fn test_and_returns_operand_not_boolean() {
+        // lox 中 and 返回操作数值本身，而非布尔
+        assert_eq!(run_code("print 1 and 2;").trim(), "2");
+        assert_eq!(run_code("print 1 and nil;").trim(), "<nil>");
+        assert_eq!(run_code("print \"a\" and \"b\";").trim(), "b");
+    }
+
+    #[test]
+    fn test_and_short_circuit() {
+        // 左侧 falsy 时不求值右侧：若右侧执行会得到 3，短路后直接返回左侧值
+        assert_eq!(run_code("print false and (1 + 2);").trim(), "false");
+        assert_eq!(run_code("print 0 and (1 + 2);").trim(), "0");
+        assert_eq!(run_code("print nil and (1 + 2);").trim(), "<nil>");
+    }
+
+    #[test]
+    fn test_and_left_associative() {
+        assert_eq!(run_code("print 1 and 2 and 3;").trim(), "3");
+        assert_eq!(run_code("print true and nil and 3;").trim(), "<nil>");
+    }
+
+    // ---------- or 运算符 ----------
+
+    #[test]
+    fn test_or_truth_table() {
+        assert_eq!(run_code("print false or false;").trim(), "false");
+        assert_eq!(run_code("print false or true;").trim(), "true");
+        assert_eq!(run_code("print true or false;").trim(), "true");
+        assert_eq!(run_code("print true or true;").trim(), "true");
+    }
+
+    #[test]
+    fn test_or_returns_operand_not_boolean() {
+        assert_eq!(run_code("print false or 42;").trim(), "42");
+        assert_eq!(run_code("print false or \"default\";").trim(), "default");
+        assert_eq!(run_code("print 7 or 9;").trim(), "7");
+    }
+
+    #[test]
+    fn test_or_short_circuit() {
+        // 左侧 truthy 时不求值右侧：若右侧执行会得到 3，短路后直接返回左侧值
+        assert_eq!(run_code("print true or (1 + 2);").trim(), "true");
+        assert_eq!(run_code("print 1 or (1 + 2);").trim(), "1");
+        assert_eq!(run_code("print \"x\" or (1 + 2);").trim(), "x");
+    }
+
+    #[test]
+    fn test_or_falls_through_on_falsy() {
+        // nil 和 0 是 falsy，继续求值右侧
+        assert_eq!(run_code("print nil or 5;").trim(), "5");
+        assert_eq!(run_code("print 0 or 5;").trim(), "5");
+        assert_eq!(run_code("print false or 5;").trim(), "5");
+    }
+
+    #[test]
+    fn test_or_left_associative() {
+        assert_eq!(run_code("print 0 or 0 or 5;").trim(), "5");
+        assert_eq!(run_code("print 0 or nil or 5;").trim(), "5");
+        assert_eq!(run_code("print 3 or 0 or 5;").trim(), "3");
+    }
+
+    // ---------- and / or 优先级与组合 ----------
+
+    #[test]
+    fn test_and_binds_tighter_than_or() {
+        // and 优先级(3) 高于 or(2)：解析为 true or (false and false) => true
+        assert_eq!(run_code("print true or false and false;").trim(), "true");
+        // 若按 (true or false) and false 解析，结果应为 false
+        assert_eq!(run_code("print (true or false) and false;").trim(), "false");
+    }
+
+    #[test]
+    fn test_logic_with_comparison() {
+        // 比较优先级高于 and/or
+        assert_eq!(run_code("print 1 < 2 and 2 < 3;").trim(), "true");
+        assert_eq!(run_code("print 1 == 2 or 2 == 2;").trim(), "true");
+        assert_eq!(run_code("print 1 > 2 or 3 > 4;").trim(), "false");
+    }
+
+    #[test]
+    fn test_logic_with_unary_not() {
+        // ! 优先级高于 and/or，先对操作数取反
+        assert_eq!(run_code("print !false and !false;").trim(), "true");
+        assert_eq!(run_code("print !true or !true;").trim(), "false");
+    }
+
+    #[test]
+    fn test_logic_in_if_condition() {
+        assert_eq!(
+            run_code("if (true and false) { print \"y\"; } else { print \"n\"; }").trim(),
+            "n"
+        );
+        assert_eq!(
+            run_code("if (false or true) { print \"y\"; } else { print \"n\"; }").trim(),
+            "y"
+        );
+    }
+
     // ---------- 其他 ----------
 
     #[test]
