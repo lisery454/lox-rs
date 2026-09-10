@@ -1,4 +1,7 @@
-use std::fs::{File, OpenOptions};
+use std::{
+    fs::{File, OpenOptions},
+    io,
+};
 
 use anyhow::{Result, bail};
 use std::io::Write;
@@ -6,24 +9,41 @@ use tabled::{builder::Builder, settings::Style};
 
 use crate::model::{Chunk, Constant, Memory, ObjectKind, OpCode, Value};
 
-pub struct VM {
+pub struct VM<W: Write> {
     chunk: Option<Chunk>,
     ip: usize,
 
     log_file: Option<File>,
     memory: Memory,
+
+    writer: W,
 }
 
-impl VM {
+impl<W: Write> VM<W> {
+    pub fn with_writer(writer: W) -> Self {
+        Self {
+            chunk: None,
+            ip: 0,
+            log_file: None,
+            memory: Memory::new(),
+            writer,
+        }
+    }
+}
+
+impl VM<io::Stdout> {
     pub fn new() -> Self {
         VM {
             chunk: None,
             ip: 0,
             log_file: None,
             memory: Memory::new(),
+            writer: io::stdout(),
         }
     }
+}
 
+impl<W: Write> VM<W> {
     fn get_chunk(&self) -> &Chunk {
         return match &self.chunk {
             Some(c) => c,
@@ -234,7 +254,7 @@ impl VM {
                 }
                 OpCode::Print => {
                     let v = self.memory.stack_pop();
-                    v.print(&self.memory);
+                    v.print(&self.memory, &mut self.writer)?;
                 }
                 OpCode::Pop => {
                     let _ = self.memory.stack_pop();
@@ -299,7 +319,7 @@ impl VM {
     }
 }
 
-impl std::fmt::Display for VM {
+impl<W: Write> std::fmt::Display for VM<W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut builder = Builder::new();
         if let Some(chunk) = &self.chunk {

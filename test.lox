@@ -1,6 +1,2 @@
-{
-    var a = 123;
-    {var b = 456;
-    print a;
-    print b;}
-}
+// aaa
+print 123;

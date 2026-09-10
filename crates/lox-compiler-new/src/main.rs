@@ -9,6 +9,7 @@ use anyhow::Result;
 mod compiler;
 mod model;
 mod scanner;
+mod test;
 mod vm;
 
 pub use compiler::*;

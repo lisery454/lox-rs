@@ -150,7 +150,10 @@ impl Scanner {
                     }
                     '/' => {
                         if let Some('/') = self.peek_next() {
-                            while let Some('\n') = self.peek() {
+                            // 跳过注释内容，直到行末（不含换行本身）
+                            while let Some(p) = self.peek()
+                                && *p != '\n'
+                            {
                                 self.advance();
                             }
                         } else {

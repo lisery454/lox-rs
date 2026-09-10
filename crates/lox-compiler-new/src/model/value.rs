@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::model::{Memory, ObjAddr, ObjectKind};
 
 /// use in VM, is dynamic, need memory management
@@ -22,20 +24,21 @@ impl std::fmt::Display for Value {
 }
 
 impl Value {
-    pub fn print(&self, memory: &Memory) {
+    pub fn print<W: Write>(&self, memory: &Memory, w: &mut W) -> anyhow::Result<()> {
         match self {
-            Value::Boolean(b) => println!("{}", b),
-            Value::Number(n) => println!("{}", n),
-            Value::Nil => println!("<nil>"),
+            Value::Boolean(b) => writeln!(w, "{}", b),
+            Value::Number(n) => writeln!(w, "{}", n),
+            Value::Nil => writeln!(w, "<nil>"),
             Value::Object(addr) => match memory.get_obj(*addr) {
                 Some(kind) => match kind {
-                    ObjectKind::String(s) => println!("{}", s),
+                    ObjectKind::String(s) => writeln!(w, "{}", s),
                 },
                 None => {
-                    println!("<nil>")
+                    writeln!(w, "<nil>")
                 }
             },
-        }
+        }?;
+        Ok(())
     }
 
     pub fn to_bool(&self, memory: &Memory) -> bool {

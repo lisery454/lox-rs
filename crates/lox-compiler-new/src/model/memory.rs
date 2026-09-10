@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::write};
+use std::{collections::HashMap};
 
 use anyhow::bail;
 
@@ -7,7 +7,7 @@ use crate::model::Value;
 pub type ObjAddr = usize;
 
 pub struct Object {
-    pub is_marked: bool,  // GC 标记位
+    // pub is_marked: bool,  // GC 标记位
     pub kind: ObjectKind, // 具体的对象类型
 }
 
@@ -82,7 +82,7 @@ impl Memory {
 
     pub fn alloc(&mut self, kind: ObjectKind) -> ObjAddr {
         let obj = Object {
-            is_marked: false,
+            // is_marked: false,
             kind,
         };
 
