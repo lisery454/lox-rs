@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::write};
+
+use anyhow::bail;
 
 use crate::model::Value;
 
@@ -13,9 +15,18 @@ pub enum ObjectKind {
     String(String),
 }
 
+impl std::fmt::Display for ObjectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectKind::String(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 pub struct Memory {
     pub heap: Vec<Option<Object>>,
     pub stack: Vec<Value>,
+    pub globals: HashMap<String, Value>,
 
     pub string_pool: HashMap<String, ObjAddr>,
 }
@@ -27,12 +38,9 @@ impl Memory {
         Self {
             heap: Vec::new(),
             stack: Vec::new(),
+            globals: HashMap::new(),
             string_pool: HashMap::new(),
         }
-    }
-
-    pub fn get_obj(&self, addr: ObjAddr) -> Option<&ObjectKind> {
-        self.heap.get(addr)?.as_ref().map(|obj| &obj.kind)
     }
 
     pub fn stack_push(&mut self, v: Value) {
@@ -60,6 +68,18 @@ impl Memory {
         }
     }
 
+    pub fn stack_get(&self, slot: usize) -> Option<&Value> {
+        self.stack.get(slot)
+    }
+
+    pub fn stack_set(&mut self, slot: usize, value: Value) {
+        self.stack[slot] = value;
+    }
+
+    pub fn get_obj(&self, addr: ObjAddr) -> Option<&ObjectKind> {
+        self.heap.get(addr)?.as_ref().map(|obj| &obj.kind)
+    }
+
     pub fn alloc(&mut self, kind: ObjectKind) -> ObjAddr {
         let obj = Object {
             is_marked: false,
@@ -82,5 +102,33 @@ impl Memory {
         self.string_pool.insert(s, addr);
 
         addr
+    }
+
+    pub fn get_string(&self, obj: Value) -> anyhow::Result<String> {
+        let Value::Object(addr) = obj else {
+            bail!("not find obj");
+        };
+
+        let Some(ObjectKind::String(name_str)) = self.get_obj(addr) else {
+            bail!("obj is not a string");
+        };
+        let name_str = name_str.to_string();
+        Ok(name_str)
+    }
+
+    pub fn insert_global(&mut self, name: &str, val: Value) {
+        self.globals.insert(name.to_string(), val);
+    }
+
+    pub fn get_global(&mut self, name: &str) -> Option<&Value> {
+        self.globals.get(name)
+    }
+
+    pub fn set_global(&mut self, name: &str, new_val: Value) -> anyhow::Result<()> {
+        if let Some(val) = self.globals.get_mut(name) {
+            *val = new_val;
+            return Ok(());
+        }
+        bail!("not find name {} in global", name);
     }
 }

@@ -1,2 +1,6 @@
-print "hello" + ", world";
-print "hello" + ", world";
+{
+    var a = 123;
+    {var b = 456;
+    print a;
+    print b;}
+}

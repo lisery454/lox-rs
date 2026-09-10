@@ -2,12 +2,17 @@ use anyhow::bail;
 
 use crate::{
     Scanner,
-    model::{Chunk, Constant, OpCode, ParseFnType, Precedence, Token, TokenType, get_parse_rule},
+    model::{
+        Chunk, Constant, Local, OpCode, ParseFnType, Precedence, Token, TokenType, get_parse_rule,
+    },
 };
 
 pub struct Compiler {
     current: Option<Token>,
     previous: Option<Token>,
+
+    locals: Vec<Local>,
+    scope_depth: i32,
 
     scanner: Scanner,
     errors: Vec<anyhow::Error>,
@@ -19,7 +24,9 @@ impl Compiler {
             scanner: Scanner::new(source),
             current: None,
             previous: None,
+            locals: Vec::new(),
             errors: Vec::new(),
+            scope_depth: 0,
         }
     }
 
@@ -46,7 +53,7 @@ impl Compiler {
 
     fn declaration(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
         if self.match_(TokenType::Var) {
-            self.var_decl()?;
+            self.var_decl(chunk)?;
         } else {
             self.stmt(chunk)?;
         }
@@ -76,24 +83,81 @@ impl Compiler {
         }
     }
 
-    fn var_decl(&mut self) -> anyhow::Result<()> {
-        todo!()
-        // let global_var_index = self.parse_var_to_index("Expect variable name.")?;
+    fn var_decl(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let global_var_index = self.parse_var_to_index(chunk, "Expect variable name.")?;
 
-        // if self.match_(TokenType::Equal)? {
-        //     self.expression()?;
-        // } else {
-        //     self.emit_byte(OpCode::Nil)?;
-        // }
+        if self.match_(TokenType::Equal) {
+            self.expression(chunk)?;
+        } else {
+            self.emit_byte(chunk, OpCode::Nil);
+        }
 
-        // self.consume(
-        //     TokenType::Semicolon,
-        //     "Expect ';' after variable declaration.",
-        // )?;
+        self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration.",
+        )?;
 
-        // self.define_var(global_var_index)?;
+        self.define_var(chunk, global_var_index)?;
 
-        // Ok(())
+        Ok(())
+    }
+
+    fn parse_var_to_index(&mut self, chunk: &mut Chunk, msg: &str) -> anyhow::Result<u8> {
+        self.consume(TokenType::Identifier, msg)?;
+        // 局部变量直接返回，不需要向chunk添加数据，因为局部变量自动留在了stack中
+        if self.scope_depth > 0 {
+            self.declare_local_var()?;
+            return Ok(0);
+        }
+        let p = self.get_previous_token();
+        let s = p.lexeme.clone();
+        let index = self.add_constant(chunk, Constant::String(s));
+        Ok(index)
+    }
+
+    fn declare_local_var(&mut self) -> anyhow::Result<()> {
+        let name = self.get_previous_token().clone();
+
+        for local in self.locals.iter().rev() {
+            // 如果还没初始化或者深度小于当前的深度了，就说明已离开当前作用域了
+            if local.depth != -1 && local.depth < self.scope_depth {
+                break;
+            }
+            if name.lexeme == local.token.lexeme {
+                bail!(
+                    "Already a variable with this name in this scope, on word {}, in line {}.",
+                    name.lexeme,
+                    name.line
+                );
+            }
+        }
+
+        self.add_local(name)?;
+        Ok(())
+    }
+
+    fn add_local(&mut self, name: Token) -> anyhow::Result<()> {
+        if self.locals.len() > 255 {
+            bail!(
+                "Too many local variables in function, on word {}, in line {}.",
+                name.lexeme,
+                name.line
+            );
+        }
+        // -1 depth 表示还没有初始化，只是声明
+        self.locals.push(Local::new(name, -1));
+        Ok(())
+    }
+
+    fn define_var(&mut self, chunk: &mut Chunk, index: u8) -> anyhow::Result<()> {
+        // // 局部变量直接返回，不需要定义
+        if self.scope_depth > 0 {
+            // 这里算定义完成，把深度赋给它
+            self.locals.last_mut().unwrap().depth = self.scope_depth;
+            return Ok(());
+        }
+        self.emit_bytes(chunk, OpCode::DefineGlobal, index);
+        Ok(())
     }
 
     fn stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
@@ -105,12 +169,39 @@ impl Compiler {
         //     self.while_stmt()?
         // } else if self.match_(TokenType::For) {
         //     self.for_stmt()?
-        // } else if self.match_(TokenType::LeftBrace) {
-        //     self.begin_scope();
-        //     self.block()?;
-        //     self.end_scope()?;
+        } else if self.match_(TokenType::LeftBrace) {
+            self.begin_scope();
+            self.block(chunk)?;
+            self.end_scope(chunk)?;
         } else {
             self.expression_stmt(chunk)?;
+        }
+
+        Ok(())
+    }
+
+    fn block(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::Eof) {
+            self.declaration(chunk)?;
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")?;
+        Ok(())
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        self.scope_depth -= 1;
+
+        // 局部变量存在 stack 中，离开作用域时要把它们从 stack 弹出
+        while let Some(last_local) = self.locals.last()
+            && last_local.depth > self.scope_depth
+        {
+            self.emit_byte(chunk, OpCode::Pop);
+            self.locals.pop();
         }
 
         Ok(())
@@ -188,7 +279,8 @@ impl Compiler {
 // emit
 impl Compiler {
     fn emit_byte<T: Into<u8>>(&self, chunk: &mut Chunk, byte: T) {
-        chunk.write(byte, self.get_previous_token().line);
+        let b = byte.into();
+        chunk.write(b, self.get_previous_token().line);
     }
 
     fn emit_return(&self, chunk: &mut Chunk) {
@@ -203,6 +295,11 @@ impl Compiler {
     fn emit_constant(&self, chunk: &mut Chunk, constant: Constant) {
         let index = chunk.add_constant(constant);
         self.emit_bytes(chunk, OpCode::Constant, index);
+    }
+
+    fn add_constant(&mut self, chunk: &mut Chunk, constant: Constant) -> u8 {
+        let index = chunk.add_constant(constant);
+        index
     }
 }
 
@@ -221,9 +318,9 @@ impl Compiler {
             ParseFnType::Number => self.number(chunk),
             ParseFnType::Literal => self.literal(chunk),
             ParseFnType::String => self.string(chunk),
+            ParseFnType::Variable => self.variable(chunk, can_assign),
             // ParseFnType::And => self.and(chunk),
             // ParseFnType::Or => self.or(chunk),
-            // ParseFnType::Variable => self.variable(can_assign),
             _ => todo!(),
         }
     }
@@ -267,6 +364,62 @@ impl Compiler {
         }
 
         Ok(())
+    }
+
+    fn variable(&mut self, chunk: &mut Chunk, can_assign: bool) -> anyhow::Result<()> {
+        let name = self.get_previous_token().clone();
+        self.named_var(chunk, name, can_assign)
+    }
+
+    fn named_var(
+        &mut self,
+        chunk: &mut Chunk,
+        name: Token,
+        can_assign: bool,
+    ) -> anyhow::Result<()> {
+        let get_op: OpCode;
+        let set_op: OpCode;
+        let index;
+
+        // 如果是局部变量
+        if let Some(i) = self.resolve_local(&name)? {
+            index = i;
+            get_op = OpCode::GetLocal;
+            set_op = OpCode::SetLocal;
+        }
+        // 如果是全局变量
+        else {
+            index = self.add_constant(chunk, Constant::String(name.lexeme));
+            get_op = OpCode::GetGlobal;
+            set_op = OpCode::SetGlobal;
+        }
+
+        // 如果当前仍旧是赋值优先级作用域，就可以赋值；不然就是获取值。
+        if can_assign && self.match_(TokenType::Equal) {
+            self.expression(chunk)?;
+            self.emit_bytes(chunk, set_op, index);
+        } else {
+            self.emit_bytes(chunk, get_op, index);
+        }
+        Ok(())
+    }
+
+    fn resolve_local(&self, name: &Token) -> anyhow::Result<Option<u8>> {
+        // 从后往前找，最内层作用域的变量优先
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.token.lexeme == name.lexeme {
+                if local.depth == -1 {
+                    bail!(
+                        "Can't read local variable in its own initializer, on {}, in {}",
+                        name.lexeme,
+                        name.line
+                    );
+                }
+                return Ok(Some(i as u8));
+            }
+        }
+
+        return Ok(None);
     }
 
     fn literal(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {

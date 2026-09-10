@@ -74,9 +74,7 @@ impl<'a> std::fmt::Display for ChunkWithIp<'a> {
                     OpCode::Constant
                     | OpCode::DefineGlobal
                     | OpCode::GetGlobal
-                    | OpCode::SetGlobal
-                    | OpCode::GetLocal
-                    | OpCode::SetLocal => {
+                    | OpCode::SetGlobal => {
                         write!(f, "{:04} ", offset)?;
 
                         let value_index = self.chunk.code[offset + 1] as usize;
@@ -87,6 +85,13 @@ impl<'a> std::fmt::Display for ChunkWithIp<'a> {
                         } else {
                             panic!("invalid constant index");
                         }
+                        offset += 2;
+                    }
+                    OpCode::GetLocal | OpCode::SetLocal => {
+                        write!(f, "{:04} ", offset)?;
+
+                        let slot = self.chunk.code[offset + 1];
+                        write!(f, "{}(slot {})", code, slot)?;
                         offset += 2;
                     }
                     OpCode::JumpIfFalse | OpCode::Jump => {

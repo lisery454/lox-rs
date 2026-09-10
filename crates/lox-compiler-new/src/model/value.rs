@@ -1,7 +1,7 @@
 use crate::model::{Memory, ObjAddr, ObjectKind};
 
 /// use in VM, is dynamic, need memory management
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub enum Value {
     Boolean(bool),
@@ -24,15 +24,15 @@ impl std::fmt::Display for Value {
 impl Value {
     pub fn print(&self, memory: &Memory) {
         match self {
-            Value::Boolean(b) => print!("{}", b),
-            Value::Number(n) => print!("{}", n),
-            Value::Nil => print!("<nil>"),
+            Value::Boolean(b) => println!("{}", b),
+            Value::Number(n) => println!("{}", n),
+            Value::Nil => println!("<nil>"),
             Value::Object(addr) => match memory.get_obj(*addr) {
                 Some(kind) => match kind {
                     ObjectKind::String(s) => println!("{}", s),
                 },
                 None => {
-                    print!("<nil>")
+                    println!("<nil>")
                 }
             },
         }

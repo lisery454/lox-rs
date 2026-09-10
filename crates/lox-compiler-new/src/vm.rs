@@ -1,6 +1,6 @@
 use std::fs::{File, OpenOptions};
 
-use anyhow::{Ok, Result, bail};
+use anyhow::{Result, bail};
 use std::io::Write;
 use tabled::{builder::Builder, settings::Style};
 
@@ -239,6 +239,60 @@ impl VM {
                 OpCode::Pop => {
                     let _ = self.memory.stack_pop();
                 }
+                OpCode::DefineGlobal => {
+                    // val is in stack, ip is on opcode DefineGlobal, name is on next pos of chunk.
+                    let val = self.memory.stack_pop();
+                    let name = self.read_constant();
+                    self.ip += 1;
+
+                    let Ok(name_str) = self.memory.get_string(name) else {
+                        bail!("not find name obj when define global, in line {}", line);
+                    };
+
+                    self.memory.insert_global(&name_str, val);
+                }
+                OpCode::GetGlobal => {
+                    let name = self.read_constant();
+                    self.ip += 1;
+
+                    let Ok(name_str) = self.memory.get_string(name) else {
+                        bail!("not find name obj when get global, in line {}", line);
+                    };
+
+                    let Some(val) = self.memory.get_global(&name_str) else {
+                        bail!("global {}  can't found, in line {}", name_str, line);
+                    };
+
+                    let val = val.clone();
+                    self.memory.stack_push(val);
+                }
+                OpCode::SetGlobal => {
+                    let new_val = self.memory.stack_peek().clone();
+                    let name = self.read_constant();
+                    self.ip += 1;
+                    let Ok(name_str) = self.memory.get_string(name) else {
+                        bail!("not find name obj when set global, in line {}", line);
+                    };
+
+                    let Ok(_) = self.memory.set_global(&name_str, new_val) else {
+                        bail!("undefined variable {}, in line {}", name_str, line);
+                    };
+                }
+                OpCode::GetLocal => {
+                    let slot = self.read_byte() as usize;
+                    self.ip += 1;
+                    let Some(v) = self.memory.stack_get(slot).cloned() else {
+                        bail!("not find local in {}, in line {}", slot, line);
+                    };
+
+                    self.memory.stack_push(v);
+                }
+                OpCode::SetLocal => {
+                    let slot = self.read_byte() as usize;
+                    self.ip += 1;
+                    self.memory
+                        .stack_set(slot, self.memory.stack_peek().clone());
+                }
                 _ => {}
             }
         }
@@ -264,13 +318,27 @@ impl std::fmt::Display for VM {
             .join("\n");
         builder.push_column(["stack".to_string(), format!("{}", stack_str)]);
 
-        // let global_str = self
-        //     .gloabls
-        //     .iter()
-        //     .map(|ele| format!("{}: {}", ele.0, ele.1))
-        //     .collect::<Vec<String>>()
-        //     .join("\n");
-        // builder.push_column(["globals".to_string(), format!("{}", global_str)]);
+        let global_str = self
+            .memory
+            .heap
+            .iter()
+            .enumerate()
+            .map(|(addr, ele)| match ele {
+                Some(o) => format!("[{addr}]: {}", o.kind),
+                None => format!("[{addr}]: <Nil>"),
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        builder.push_column(["heap".to_string(), format!("{}", global_str)]);
+
+        let global_str = self
+            .memory
+            .globals
+            .iter()
+            .map(|ele| format!("{}: {}", ele.0, ele.1))
+            .collect::<Vec<String>>()
+            .join("\n");
+        builder.push_column(["globals".to_string(), format!("{}", global_str)]);
 
         let table = builder.build().with(Style::modern_rounded()).to_string();
 
