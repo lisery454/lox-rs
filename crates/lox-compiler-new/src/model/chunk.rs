@@ -32,6 +32,14 @@ impl Chunk {
         panic!("Too many constants in one chunk!");
     }
 
+    pub fn count(&self) -> usize {
+        return self.code.len();
+    }
+
+    pub fn overwrite<T: Into<u8>>(&mut self, loc: usize, t: T) {
+        self.code[loc] = t.into();
+    }
+
     pub fn with_ip(&self, ip: i32) -> ChunkWithIp<'_> {
         ChunkWithIp { ip, chunk: &self }
     }
@@ -95,25 +103,25 @@ impl<'a> std::fmt::Display for ChunkWithIp<'a> {
                         offset += 2;
                     }
                     OpCode::JumpIfFalse | OpCode::Jump => {
-                        // write!(f, "{:04} ", offset)?;
+                        write!(f, "{:04} ", offset)?;
 
-                        // let byte = self.chunk.code.borrow()[offset + 1] as usize;
-                        // let byte2 = self.chunk.code.borrow()[offset + 2] as usize;
-                        // let jump_to = ((byte << 8) | byte2) + offset + 3;
+                        let byte = self.chunk.code[offset + 1] as usize;
+                        let byte2 = self.chunk.code[offset + 2] as usize;
+                        let jump_to = ((byte << 8) | byte2) + offset + 3;
 
-                        // write!(f, "{}({})", code, jump_to)?;
-                        // offset += 3;
+                        write!(f, "{}({})", code, jump_to)?;
+                        offset += 3;
                     }
                     OpCode::RevJump => {
-                        // write!(f, "{:04} ", offset)?;
+                        write!(f, "{:04} ", offset)?;
 
-                        // let byte = self.chunk.code.borrow()[offset + 1] as usize;
-                        // let byte2 = self.chunk.code.borrow()[offset + 2] as usize;
+                        let byte = self.chunk.code[offset + 1] as usize;
+                        let byte2 = self.chunk.code[offset + 2] as usize;
 
-                        // let jump_to = offset + 3 - ((byte << 8) | byte2);
+                        let jump_to = offset + 3 - ((byte << 8) | byte2);
 
-                        // write!(f, "{}({})", code, jump_to)?;
-                        // offset += 3;
+                        write!(f, "{}({})", code, jump_to)?;
+                        offset += 3;
                     }
                     _ => {
                         write!(f, "{:04} ", offset)?;

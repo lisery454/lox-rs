@@ -163,8 +163,8 @@ impl Compiler {
     fn stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
         if self.match_(TokenType::Print) {
             self.print_stmt(chunk)?
-        // } else if self.match_(TokenType::If) {
-        //     self.if_stmt()?
+        } else if self.match_(TokenType::If) {
+            self.if_stmt(chunk)?
         // } else if self.match_(TokenType::While) {
         //     self.while_stmt()?
         // } else if self.match_(TokenType::For) {
@@ -177,6 +177,28 @@ impl Compiler {
             self.expression_stmt(chunk)?;
         }
 
+        Ok(())
+    }
+
+    fn if_stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        self.expression(chunk)?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let then_jump_index = self.emit_jump(chunk, OpCode::JumpIfFalse)?;
+        {
+            self.emit_byte(chunk, OpCode::Pop); // 清除条件值
+            self.stmt(chunk)?;
+        }
+        let else_jump_index = self.emit_jump(chunk, OpCode::Jump)?;
+        self.patch_jump(chunk, then_jump_index)?;
+        {
+            self.emit_byte(chunk, OpCode::Pop); // 清除条件值
+            if self.match_(TokenType::Else) {
+                self.stmt(chunk)?;
+            }
+        }
+        self.patch_jump(chunk, else_jump_index)?;
         Ok(())
     }
 
@@ -300,6 +322,35 @@ impl Compiler {
     fn add_constant(&mut self, chunk: &mut Chunk, constant: Constant) -> u8 {
         let index = chunk.add_constant(constant);
         index
+    }
+
+    fn emit_jump<T: Into<u8>>(
+        &mut self,
+        chunk: &mut Chunk,
+        instruction: T,
+    ) -> anyhow::Result<usize> {
+        self.emit_byte(chunk, instruction);
+        self.emit_byte(chunk, 0xff);
+        self.emit_byte(chunk, 0xff);
+        // 返回的是记录jumpoffset指令的OpCode的offset
+        Ok(chunk.count() - 2)
+    }
+
+    fn patch_jump(&mut self, chunk: &mut Chunk, code_index: usize) -> anyhow::Result<()> {
+        // 在读取需要jump的loc的OpCode后，需要jump的offset
+        let jump = chunk.count() - code_index - 2;
+
+        if jump > u16::MAX as usize {
+            bail!(
+                "Too much code to jump over, on word {}, in line {}",
+                self.get_current_token().lexeme,
+                self.get_previous_token().line
+            );
+        }
+
+        chunk.overwrite(code_index, ((jump >> 8) & 0xff) as u8);
+        chunk.overwrite(code_index + 1, (jump & 0xff) as u8);
+        Ok(())
     }
 }
 

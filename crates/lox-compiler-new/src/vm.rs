@@ -79,6 +79,15 @@ impl<W: Write> VM<W> {
         line
     }
 
+    fn get_offset(&mut self) -> usize {
+        let o1 = (self.read_byte() as usize) << 8;
+        self.ip += 1;
+        let o2 = self.read_byte() as usize;
+        self.ip += 1;
+        let offset = o1 | o2;
+        offset
+    }
+
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte() as usize;
         let constant = &self.get_chunk().constants[index];
@@ -313,7 +322,20 @@ impl<W: Write> VM<W> {
                     self.memory
                         .stack_set(slot, self.memory.stack_peek().clone());
                 }
-                _ => {}
+                OpCode::JumpIfFalse => {
+                    let offset = self.get_offset();
+                    if !self.memory.stack_peek().to_bool(&self.memory) {
+                        self.ip += offset;
+                    }
+                }
+                OpCode::Jump => {
+                    let offset = self.get_offset();
+                    self.ip += offset;
+                }
+                OpCode::RevJump => {
+                    let offset = self.get_offset();
+                    self.ip -= offset;
+                }
             }
         }
     }

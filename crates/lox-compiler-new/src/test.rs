@@ -148,6 +148,113 @@ mod tests {
         assert_eq!(run_code("1 + 2; print \"done\";").trim(), "done");
     }
 
+    // ---------- if-else 控制流 ----------
+
+    #[test]
+    fn test_if_true_executes_then_branch() {
+        assert_eq!(run_code("if (true) { print \"then\"; }").trim(), "then");
+        assert_eq!(
+            run_code("if (2 > 1) { print \"bigger\"; }").trim(),
+            "bigger"
+        );
+    }
+
+    #[test]
+    fn test_if_false_skips_then_branch() {
+        // 条件为假，then 分支不执行，无任何输出
+        assert_eq!(run_code("if (false) { print \"no\"; }").trim(), "");
+        assert_eq!(run_code("if (1 > 2) { print \"no\"; }").trim(), "");
+    }
+
+    #[test]
+    fn test_if_else_selects_branch() {
+        // 与 test.lox 相同：条件为真走 then，为假走 else
+        let code = concat!(
+            "if (2 > 1) {\n",
+            "    print \"then\";\n",
+            "} else {\n",
+            "    print \"else\";\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "then");
+
+        let code = concat!(
+            "if (1 > 2) {\n",
+            "    print \"then\";\n",
+            "} else {\n",
+            "    print \"else\";\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "else");
+    }
+
+    #[test]
+    fn test_if_else_condition_falsey() {
+        // nil、0、false 都是 falsy，走 else；非零数字是 truthy，走 then
+        assert_eq!(run_code("if (nil) { print \"then\"; }").trim(), "");
+        assert_eq!(
+            run_code("if (0) { print \"then\"; } else { print \"else\"; }").trim(),
+            "else"
+        );
+        assert_eq!(
+            run_code("if (false) { print \"then\"; } else { print \"else\"; }").trim(),
+            "else"
+        );
+        assert_eq!(
+            run_code("if (123) { print \"then\"; } else { print \"else\"; }").trim(),
+            "then"
+        );
+    }
+
+    #[test]
+    fn test_if_without_braces() {
+        // 单条语句可以省略大括号
+        assert_eq!(run_code("if (true) print \"yes\";").trim(), "yes");
+        assert_eq!(
+            run_code("if (false) print \"yes\"; else print \"no\";").trim(),
+            "no"
+        );
+    }
+
+    #[test]
+    fn test_nested_if_else() {
+        let code = concat!(
+            "if (1 < 2) {\n",
+            "    if (2 < 3) {\n",
+            "        print \"inner\";\n",
+            "    } else {\n",
+            "        print \"inner else\";\n",
+            "    }\n",
+            "} else {\n",
+            "    print \"outer else\";\n",
+            "}"
+        );
+        assert_eq!(run_code(code).trim(), "inner");
+    }
+
+    #[test]
+    fn test_if_else_with_local_var() {
+        // if 分支中定义局部变量，离开作用域后自动弹出
+        let code = concat!(
+            "var x = 10;\n",
+            "if (x > 5) {\n",
+            "    var y = x * 10;\n",
+            "    print y;\n",
+            "} else {\n",
+            "    print 0;\n",
+            "}\n",
+            "print x;"
+        );
+        assert_eq!(run_code(code).trim(), "100\n10");
+    }
+
+    #[test]
+    fn test_if_condition_does_not_pollute_stack() {
+        // if 的条件值会被 Pop 清除，不会残留在栈上
+        let code = concat!("if (true) print \"a\";\nprint \"b\";");
+        assert_eq!(run_code(code).trim(), "a\nb");
+    }
+
     // ---------- 其他 ----------
 
     #[test]
