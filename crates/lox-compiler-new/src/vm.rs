@@ -7,11 +7,16 @@ use anyhow::{Result, bail};
 use std::io::Write;
 use tabled::{builder::Builder, settings::Style};
 
-use crate::model::{Chunk, Constant, Memory, ObjectKind, OpCode, Value};
+use crate::model::{Chunk, Constant, Function, Memory, ObjectKind, OpCode, Value};
+
+pub struct CallFrame {
+    pub chunk: Chunk,
+    pub ip: usize,
+    pub stack_base: usize,
+}
 
 pub struct VM<W: Write> {
-    chunk: Option<Chunk>,
-    ip: usize,
+    frames: Vec<CallFrame>,
 
     log_file: Option<File>,
     memory: Memory,
@@ -22,8 +27,7 @@ pub struct VM<W: Write> {
 impl<W: Write> VM<W> {
     pub fn with_writer(writer: W) -> Self {
         Self {
-            chunk: None,
-            ip: 0,
+            frames: Vec::new(),
             log_file: None,
             memory: Memory::new(),
             writer,
@@ -34,8 +38,7 @@ impl<W: Write> VM<W> {
 impl VM<io::Stdout> {
     pub fn new() -> Self {
         VM {
-            chunk: None,
-            ip: 0,
+            frames: Vec::new(),
             log_file: None,
             memory: Memory::new(),
             writer: io::stdout(),
@@ -44,11 +47,8 @@ impl VM<io::Stdout> {
 }
 
 impl<W: Write> VM<W> {
-    fn get_chunk(&self) -> &Chunk {
-        return match &self.chunk {
-            Some(c) => c,
-            None => panic!("chunk is none"),
-        };
+    fn current_frame(&self) -> &CallFrame {
+        self.frames.last().expect("call stack is empty")
     }
 
     pub fn with_log(mut self, path: &str) -> Result<Self> {
@@ -63,39 +63,54 @@ impl<W: Write> VM<W> {
         Ok(self)
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<()> {
-        self.chunk = Some(chunk);
-        self.ip = 0;
+    pub fn interpret(&mut self, function: Function) -> Result<()> {
+        // 克隆 chunk 供 frame 使用，函数对象本身放到堆上
+        let chunk = function.chunk.clone();
+        let addr = self.memory.alloc(ObjectKind::Function(function));
+        self.memory.stack_push(Value::Object(addr));
+
+        let frame = CallFrame {
+            chunk,
+            ip: 0,
+            stack_base: 0,
+        };
+        self.frames.push(frame);
         self.run()
     }
 
     fn read_byte(&self) -> u8 {
-        let byte = self.get_chunk().code[self.ip];
-        byte
+        let frame = self.current_frame();
+        frame.chunk.code[frame.ip]
     }
 
     fn read_line(&self) -> usize {
-        let line = self.get_chunk().lines[self.ip];
-        line
+        let frame = self.current_frame();
+        frame.chunk.lines[frame.ip]
+    }
+
+    fn advance_ip(&mut self) {
+        self.frames.last_mut().expect("call stack is empty").ip += 1;
     }
 
     fn get_offset(&mut self) -> usize {
         let o1 = (self.read_byte() as usize) << 8;
-        self.ip += 1;
+        self.advance_ip();
         let o2 = self.read_byte() as usize;
-        self.ip += 1;
+        self.advance_ip();
         let offset = o1 | o2;
         offset
     }
 
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte() as usize;
-        let constant = &self.get_chunk().constants[index];
+        let constant = self.current_frame().chunk.constants[index].clone();
 
         match constant {
-            Constant::Number(n) => return Value::Number(*n),
-            Constant::String(s) => {
-                return self.string_to_value(s.clone());
+            Constant::Number(n) => Value::Number(n),
+            Constant::String(s) => self.string_to_value(s),
+            Constant::Function(func) => {
+                let addr = self.memory.alloc(ObjectKind::Function(func));
+                Value::Object(addr)
             }
         }
     }
@@ -103,6 +118,36 @@ impl<W: Write> VM<W> {
     fn string_to_value(&mut self, s: String) -> Value {
         let addr = self.memory.alloc_string(s);
         Value::Object(addr)
+    }
+
+    fn call_value(&mut self, arg_count: usize) -> Result<()> {
+        let callee_idx = self.memory.stack.len().saturating_sub(arg_count + 1);
+        let Some(callee) = self.memory.stack_get(callee_idx).cloned() else {
+            bail!("stack underflow when calling");
+        };
+
+        let Value::Object(addr) = callee else {
+            bail!("can only call functions and classes");
+        };
+
+        // 取出函数信息后立即结束对 memory 的借用
+        let (chunk, arity) = {
+            let Some(ObjectKind::Function(func)) = self.memory.get_obj(addr) else {
+                bail!("can only call functions and classes");
+            };
+            (func.chunk.clone(), func.arity)
+        };
+
+        if arity != arg_count {
+            bail!("expected {} arguments but got {}", arity, arg_count);
+        }
+
+        self.frames.push(CallFrame {
+            chunk,
+            ip: 0,
+            stack_base: callee_idx,
+        });
+        Ok(())
     }
 
     fn run(&mut self) -> Result<()> {
@@ -113,16 +158,30 @@ impl<W: Write> VM<W> {
             }
             let instruction = self.read_byte();
             let line = self.read_line();
-            self.ip += 1;
+            self.advance_ip();
             let code = OpCode::try_from(instruction)?;
             match code {
                 OpCode::Return => {
-                    return Ok(());
+                    let result = self.memory.stack_pop();
+                    let frame = self.frames.pop().expect("call stack is empty");
+                    if self.frames.is_empty() {
+                        // 脚本结束：弹出脚本函数对象
+                        self.memory.stack.pop();
+                        return Ok(());
+                    }
+                    // 恢复到 callee 位置并压入返回值
+                    self.memory.stack.truncate(frame.stack_base);
+                    self.memory.stack_push(result);
                 }
                 OpCode::Constant => {
                     let constant = self.read_constant();
-                    self.ip += 1;
+                    self.advance_ip();
                     self.memory.stack_push(constant);
+                }
+                OpCode::Call => {
+                    let arg_count = self.read_byte() as usize;
+                    self.advance_ip();
+                    self.call_value(arg_count)?;
                 }
                 OpCode::Negate => {
                     let v = self.memory.stack_pop();
@@ -272,7 +331,7 @@ impl<W: Write> VM<W> {
                     // val is in stack, ip is on opcode DefineGlobal, name is on next pos of chunk.
                     let val = self.memory.stack_pop();
                     let name = self.read_constant();
-                    self.ip += 1;
+                    self.advance_ip();
 
                     let Ok(name_str) = self.memory.get_string(name) else {
                         bail!("not find name obj when define global, in line {}", line);
@@ -282,7 +341,7 @@ impl<W: Write> VM<W> {
                 }
                 OpCode::GetGlobal => {
                     let name = self.read_constant();
-                    self.ip += 1;
+                    self.advance_ip();
 
                     let Ok(name_str) = self.memory.get_string(name) else {
                         bail!("not find name obj when get global, in line {}", line);
@@ -298,7 +357,7 @@ impl<W: Write> VM<W> {
                 OpCode::SetGlobal => {
                     let new_val = self.memory.stack_peek().clone();
                     let name = self.read_constant();
-                    self.ip += 1;
+                    self.advance_ip();
                     let Ok(name_str) = self.memory.get_string(name) else {
                         bail!("not find name obj when set global, in line {}", line);
                     };
@@ -309,8 +368,9 @@ impl<W: Write> VM<W> {
                 }
                 OpCode::GetLocal => {
                     let slot = self.read_byte() as usize;
-                    self.ip += 1;
-                    let Some(v) = self.memory.stack_get(slot).cloned() else {
+                    self.advance_ip();
+                    let stack_base = self.current_frame().stack_base;
+                    let Some(v) = self.memory.stack_get(stack_base + slot).cloned() else {
                         bail!("not find local in {}, in line {}", slot, line);
                     };
 
@@ -318,23 +378,24 @@ impl<W: Write> VM<W> {
                 }
                 OpCode::SetLocal => {
                     let slot = self.read_byte() as usize;
-                    self.ip += 1;
-                    self.memory
-                        .stack_set(slot, self.memory.stack_peek().clone());
+                    self.advance_ip();
+                    let stack_base = self.current_frame().stack_base;
+                    let value = self.memory.stack_peek().clone();
+                    self.memory.stack_set(stack_base + slot, value);
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.get_offset();
                     if !self.memory.stack_peek().to_bool(&self.memory) {
-                        self.ip += offset;
+                        self.frames.last_mut().unwrap().ip += offset;
                     }
                 }
                 OpCode::Jump => {
                     let offset = self.get_offset();
-                    self.ip += offset;
+                    self.frames.last_mut().unwrap().ip += offset;
                 }
                 OpCode::RevJump => {
                     let offset = self.get_offset();
-                    self.ip -= offset;
+                    self.frames.last_mut().unwrap().ip -= offset;
                 }
             }
         }
@@ -344,10 +405,10 @@ impl<W: Write> VM<W> {
 impl<W: Write> std::fmt::Display for VM<W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut builder = Builder::new();
-        if let Some(chunk) = &self.chunk {
+        if let Some(frame) = self.frames.last() {
             builder.push_column([
                 "chunk".to_string(),
-                format!("{}", chunk.with_ip(self.ip as i32)),
+                format!("{}", frame.chunk.with_ip(frame.ip as i32)),
             ]);
         }
 
@@ -366,7 +427,13 @@ impl<W: Write> std::fmt::Display for VM<W> {
             .iter()
             .enumerate()
             .map(|(addr, ele)| match ele {
-                Some(o) => format!("[{addr}]: {}", o.kind),
+                Some(o) => {
+                    let s = match o.kind.to_string() {
+                        Ok(m) => m,
+                        Err(_) => "<err>".to_string(),
+                    };
+                    format!("[{addr}]: {}", s)
+                }
                 None => format!("[{addr}]: <Nil>"),
             })
             .collect::<Vec<String>>()

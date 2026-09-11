@@ -15,6 +15,7 @@ pub enum ParseFnType {
     Literal,
     And,
     Or,
+    Call,
 }
 
 #[derive(Clone, Copy)]
@@ -34,8 +35,8 @@ const PARSE_RULES: LazyLock<[ParseRule; TokenType::COUNT]> = LazyLock::new(|| {
         Ok(typ) => match typ {
             TokenType::LeftParen => ParseRule {
                 prefix: Some(ParseFnType::Grouping),
-                infix: None,
-                precedence: Precedence::None,
+                infix: Some(ParseFnType::Call),
+                precedence: Precedence::Call,
             },
             TokenType::RightParen => none_rule,
             TokenType::LeftBrace => none_rule,

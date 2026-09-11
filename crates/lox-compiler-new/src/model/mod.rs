@@ -1,19 +1,21 @@
 mod chunk;
 mod constant;
+mod function;
+mod local;
 mod memory;
 mod opcode;
 mod parse_rule;
 mod precedence;
 mod token;
 mod value;
-mod local;
 
 pub use chunk::*;
 pub use constant::*;
+pub use function::*;
+pub use local::*;
 pub use memory::*;
 pub use opcode::*;
 pub use parse_rule::*;
 pub use precedence::*;
 pub use token::*;
 pub use value::*;
-pub use local::*;

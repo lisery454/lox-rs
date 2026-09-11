@@ -3,7 +3,8 @@ use anyhow::bail;
 use crate::{
     Scanner,
     model::{
-        Chunk, Constant, Local, OpCode, ParseFnType, Precedence, Token, TokenType, get_parse_rule,
+        Chunk, Constant, FuncType, Function, Local, OpCode, ParseFnType, Precedence, Token,
+        TokenType, get_parse_rule,
     },
 };
 
@@ -13,6 +14,8 @@ pub struct Compiler {
 
     locals: Vec<Local>,
     scope_depth: i32,
+
+    func_type: FuncType,
 
     scanner: Scanner,
     errors: Vec<anyhow::Error>,
@@ -27,12 +30,16 @@ impl Compiler {
             locals: Vec::new(),
             errors: Vec::new(),
             scope_depth: 0,
+            func_type: FuncType::Script,
         }
     }
 
-    pub fn compile(&mut self) -> anyhow::Result<Chunk> {
+    pub fn compile(&mut self) -> anyhow::Result<Function> {
         let mut chunk = Chunk::new();
         self.advance();
+
+        // 预留 slot 0 给被调用者（callee/this），局部变量从 slot 1 开始
+        self.add_slot0();
 
         while !self.match_(TokenType::Eof) {
             if let Err(e) = self.declaration(&mut chunk) {
@@ -48,12 +55,18 @@ impl Compiler {
             bail!("--- Compile Failed. ---")
         }
 
-        Ok(chunk)
+        Ok(Function {
+            arity: 0,
+            chunk,
+            name: String::from("script"),
+        })
     }
 
     fn declaration(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
         if self.match_(TokenType::Var) {
             self.var_decl(chunk)?;
+        } else if self.match_(TokenType::Function) {
+            self.fun_decl(chunk)?;
         } else {
             self.stmt(chunk)?;
         }
@@ -100,6 +113,90 @@ impl Compiler {
         self.define_var(chunk, global_var_index)?;
 
         Ok(())
+    }
+
+    fn fun_decl(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let global_var_index = self.parse_var_to_index(chunk, "Expect function name.")?;
+        // 让函数名在函数体编译前就可用，从而支持递归
+        self.mark_initialized();
+        self.function(chunk)?;
+        self.define_var(chunk, global_var_index)?;
+        Ok(())
+    }
+
+    fn mark_initialized(&mut self) {
+        if self.scope_depth == 0 {
+            return;
+        }
+        if let Some(local) = self.locals.last_mut() {
+            local.depth = self.scope_depth;
+        }
+    }
+
+    fn function(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        // 函数名已在 parse_var_to_index 中消耗，previous 即函数名
+        let name = self.get_previous_token().lexeme.clone();
+
+        // 保存外层编译状态，函数体使用独立的 locals / scope_depth / chunk
+        let enclosing_locals = std::mem::take(&mut self.locals);
+        let enclosing_scope_depth = self.scope_depth;
+        let enclosing_func_type = self.func_type;
+
+        self.scope_depth = 0;
+        self.func_type = FuncType::Function;
+        // 预留 slot 0（callee/this）
+        self.add_slot0();
+
+        let mut body = Chunk::new();
+        self.begin_scope();
+
+        // 编译参数
+        let mut arity = 0;
+        self.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
+        if !self.check(TokenType::RightParen) {
+            loop {
+                arity += 1;
+                if arity > 255 {
+                    bail!("Can't have more than 255 parameters.");
+                }
+                self.parse_var_to_index(&mut body, "Expect parameter name.")?;
+                self.define_var(&mut body, 0)?;
+                if !self.match_(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after parameters.")?;
+        self.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
+        self.block(&mut body)?;
+
+        // 隐式返回 nil（函数体局部变量由 OP_RETURN 重置栈，无需在此弹出）
+        self.emit_return(&mut body);
+
+        // 恢复外层编译状态
+        self.locals = enclosing_locals;
+        self.scope_depth = enclosing_scope_depth;
+        self.func_type = enclosing_func_type;
+
+        // 把函数对象作为常量写入外层 chunk
+        let function = Function {
+            arity,
+            chunk: body,
+            name,
+        };
+        let index = self.add_constant(chunk, Constant::Function(function));
+        self.emit_bytes(chunk, OpCode::Constant, index);
+
+        Ok(())
+    }
+
+    fn add_slot0(&mut self) {
+        let placeholder = Token {
+            typ: TokenType::Nil,
+            lexeme: String::new(),
+            line: 0,
+        };
+        self.locals.push(Local::new(placeholder, 0));
     }
 
     fn parse_var_to_index(&mut self, chunk: &mut Chunk, msg: &str) -> anyhow::Result<u8> {
@@ -169,6 +266,8 @@ impl Compiler {
             self.while_stmt(chunk)?
         } else if self.match_(TokenType::For) {
             self.for_stmt(chunk)?
+        } else if self.match_(TokenType::Return) {
+            self.return_stmt(chunk)?
         } else if self.match_(TokenType::LeftBrace) {
             self.begin_scope();
             self.block(chunk)?;
@@ -289,6 +388,21 @@ impl Compiler {
         Ok(())
     }
 
+    fn return_stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        if matches!(self.func_type, FuncType::Script) {
+            bail!("Can't return from top-level code.");
+        }
+
+        if self.match_(TokenType::Semicolon) {
+            self.emit_return(chunk);
+        } else {
+            self.expression(chunk)?;
+            self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
+            self.emit_byte(chunk, OpCode::Return);
+        }
+        Ok(())
+    }
+
     fn print_stmt(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
         self.expression(chunk)?;
         self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
@@ -366,7 +480,8 @@ impl Compiler {
     }
 
     fn emit_return(&self, chunk: &mut Chunk) {
-        self.emit_byte(chunk, OpCode::Return)
+        self.emit_byte(chunk, OpCode::Nil);
+        self.emit_byte(chunk, OpCode::Return);
     }
 
     fn emit_bytes<T: Into<u8>, U: Into<u8>>(&self, chunk: &mut Chunk, byte1: T, byte2: U) {
@@ -448,6 +563,7 @@ impl Compiler {
             ParseFnType::Variable => self.variable(chunk, can_assign),
             ParseFnType::And => self.and(chunk),
             ParseFnType::Or => self.or(chunk),
+            ParseFnType::Call => self.call(chunk),
         }
     }
 
@@ -600,6 +716,30 @@ impl Compiler {
         let v = self.get_previous_token().lexeme.parse::<f64>()?;
         self.emit_constant(chunk, Constant::Number(v));
         Ok(())
+    }
+
+    fn call(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {
+        let arg_count = self.argument_list(chunk)?;
+        self.emit_bytes(chunk, OpCode::Call, arg_count);
+        Ok(())
+    }
+
+    fn argument_list(&mut self, chunk: &mut Chunk) -> anyhow::Result<u8> {
+        let mut arg_count: u8 = 0;
+        if !self.check(TokenType::RightParen) {
+            loop {
+                self.expression(chunk)?;
+                if arg_count == 255 {
+                    bail!("Can't have more than 255 arguments.");
+                }
+                arg_count += 1;
+                if !self.match_(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.")?;
+        Ok(arg_count)
     }
 
     fn grouping(&mut self, chunk: &mut Chunk) -> anyhow::Result<()> {

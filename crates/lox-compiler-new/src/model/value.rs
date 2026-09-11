@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crate::model::{Memory, ObjAddr, ObjectKind};
+use crate::model::{Memory, ObjAddr};
 
 /// use in VM, is dynamic, need memory management
 #[derive(Clone, Copy)]
@@ -26,18 +26,16 @@ impl std::fmt::Display for Value {
 impl Value {
     pub fn print<W: Write>(&self, memory: &Memory, w: &mut W) -> anyhow::Result<()> {
         match self {
-            Value::Boolean(b) => writeln!(w, "{}", b),
-            Value::Number(n) => writeln!(w, "{}", n),
-            Value::Nil => writeln!(w, "<nil>"),
+            Value::Boolean(b) => writeln!(w, "{}", b)?,
+            Value::Number(n) => writeln!(w, "{}", n)?,
+            Value::Nil => writeln!(w, "<nil>")?,
             Value::Object(addr) => match memory.get_obj(*addr) {
-                Some(kind) => match kind {
-                    ObjectKind::String(s) => writeln!(w, "{}", s),
-                },
+                Some(kind) => kind.print(w)?,
                 None => {
-                    writeln!(w, "<nil>")
+                    writeln!(w, "<nil>")?;
                 }
             },
-        }?;
+        };
         Ok(())
     }
 

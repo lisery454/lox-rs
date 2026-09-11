@@ -102,6 +102,13 @@ impl<'a> std::fmt::Display for ChunkWithIp<'a> {
                         write!(f, "{}(slot {})", code, slot)?;
                         offset += 2;
                     }
+                    OpCode::Call => {
+                        write!(f, "{:04} ", offset)?;
+
+                        let arg_count = self.chunk.code[offset + 1];
+                        write!(f, "{}({})", code, arg_count)?;
+                        offset += 2;
+                    }
                     OpCode::JumpIfFalse | OpCode::Jump => {
                         write!(f, "{:04} ", offset)?;
 

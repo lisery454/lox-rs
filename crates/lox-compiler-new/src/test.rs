@@ -5,10 +5,10 @@ mod tests {
 
     /// 编译并运行 lox 代码，返回所有打印输出的拼接结果
     fn run_code(code: &str) -> String {
-        let chunk = Compiler::new(code).compile().unwrap();
+        let function = Compiler::new(code).compile().unwrap();
 
         let mut buffer = Vec::new();
-        VM::with_writer(&mut buffer).interpret(chunk).unwrap();
+        VM::with_writer(&mut buffer).interpret(function).unwrap();
         String::from_utf8(buffer).unwrap()
     }
 
@@ -525,5 +525,74 @@ mod tests {
     #[test]
     fn test_line_comment() {
         assert_eq!(run_code("// comment\n print 1 + 1;").trim(), "2");
+    }
+
+    // ---------- 函数 ----------
+
+    #[test]
+    fn test_function_declaration_and_call() {
+        let code = concat!(
+            "fun greet() { print \"hello\"; }\n",
+            "greet();"
+        );
+        assert_eq!(run_code(code).trim(), "hello");
+    }
+
+    #[test]
+    fn test_function_with_params() {
+        let code = concat!(
+            "fun sayHi(first, last) { print \"Hi, \" + first + \" \" + last + \"!\"; }\n",
+            "sayHi(\"Dear\", \"Reader\");"
+        );
+        assert_eq!(run_code(code).trim(), "Hi, Dear Reader!");
+    }
+
+    #[test]
+    fn test_function_return_value() {
+        let code = concat!(
+            "fun add(a, b) { return a + b; }\n",
+            "print add(3, 4);"
+        );
+        assert_eq!(run_code(code).trim(), "7");
+    }
+
+    #[test]
+    fn test_function_implicit_return_nil() {
+        let code = concat!("fun f() {}\n", "print f();");
+        assert_eq!(run_code(code).trim(), "<nil>");
+    }
+
+    #[test]
+    fn test_recursive_function() {
+        let code = concat!(
+            "fun fib(n) { if (n < 2) return n; return fib(n - 2) + fib(n - 1); }\n",
+            "print fib(10);"
+        );
+        assert_eq!(run_code(code).trim(), "55");
+    }
+
+    #[test]
+    fn test_nested_function_call() {
+        let code = concat!(
+            "fun double(x) { return x * 2; }\n",
+            "print double(double(3));"
+        );
+        assert_eq!(run_code(code).trim(), "12");
+    }
+
+    #[test]
+    fn test_local_function() {
+        let code = "{ fun inner() { return 42; } print inner(); }";
+        assert_eq!(run_code(code).trim(), "42");
+    }
+
+    #[test]
+    fn test_function_called_from_function() {
+        let code = concat!(
+            "fun a() { return 10; }\n",
+            "fun b() { return a() + 5; }\n",
+            "print b();"
+        );
+        assert_eq!(run_code(code).trim(), "15");
     }
 }

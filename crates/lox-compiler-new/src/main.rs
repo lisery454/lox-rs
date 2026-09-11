@@ -69,7 +69,7 @@ fn run_file(path: &String) -> Result<()> {
 }
 
 fn run(code: &String) -> Result<()> {
-    let chunk = Compiler::new(code).compile()?;
-    VM::new().with_log("log.txt")?.interpret(chunk)?;
+    let function = Compiler::new(code).compile()?;
+    VM::new().with_log("log.txt")?.interpret(function)?;
     Ok(())
 }

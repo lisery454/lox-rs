@@ -1,8 +1,8 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, io::Write};
 
 use anyhow::bail;
 
-use crate::model::Value;
+use crate::model::{Function, Value};
 
 pub type ObjAddr = usize;
 
@@ -13,13 +13,23 @@ pub struct Object {
 
 pub enum ObjectKind {
     String(String),
+    Function(Function),
 }
 
-impl std::fmt::Display for ObjectKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ObjectKind {
+    pub fn print<W: Write>(&self, w: &mut W) -> anyhow::Result<()> {
         match self {
-            ObjectKind::String(s) => write!(f, "{}", s),
-        }
+            ObjectKind::String(s) => write!(w, "{}", s),
+            ObjectKind::Function(f) => write!(w, "<fn {}>", f.name),
+        }?;
+
+        Ok(())
+    }
+
+    pub fn to_string(&self) -> anyhow::Result<String> {
+        let mut buffer = Vec::new();
+        self.print(&mut buffer)?;
+        String::from_utf8(buffer).map_err(|e| anyhow::anyhow!("UTF-8 encode error: {}", e))
     }
 }
 
