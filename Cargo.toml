@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/lox-compiler-new",
+    "crates/lox-compiler",
     "crates/lox-interpreter",
 ]
 resolver = '3'

@@ -5,8 +5,8 @@
       "path": ".",
     },
     {
-      "name": "compiler-new",
-      "path": "./crates/lox-compiler-new",
+      "name": "compiler",
+      "path": "./crates/lox-compiler",
     },
     {
       "name": "interpreter",

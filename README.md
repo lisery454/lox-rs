@@ -6,9 +6,9 @@ ref: <https://craftinginterpreters.com/>
 
 ```shell
 $env:RUST_BACKTRACE=1;
-cargo run -p lox-interpreter -- test.lox
-cargo run -p lox-compiler -- test.lox
-$env:RUSTFLAGS="-A warnings"; cargo run -p lox-compiler-new -q -- test.lox
+$env:RUSTFLAGS="-A warnings";
+cargo run -p lox-interpreter -q -- test.lox
+cargo run -p lox-compiler -q -- test.lox
 ```
 
 ## TODO
