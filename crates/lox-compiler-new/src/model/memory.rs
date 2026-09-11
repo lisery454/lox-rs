@@ -19,17 +19,18 @@ pub enum ObjectKind {
 impl ObjectKind {
     pub fn print<W: Write>(&self, w: &mut W) -> anyhow::Result<()> {
         match self {
-            ObjectKind::String(s) => write!(w, "{}", s),
-            ObjectKind::Function(f) => write!(w, "<fn {}>", f.name),
+            ObjectKind::String(s) => writeln!(w, "{}", s),
+            ObjectKind::Function(f) => writeln!(w, "<fn {}>", f.name),
         }?;
 
         Ok(())
     }
 
-    pub fn to_string(&self) -> anyhow::Result<String> {
-        let mut buffer = Vec::new();
-        self.print(&mut buffer)?;
-        String::from_utf8(buffer).map_err(|e| anyhow::anyhow!("UTF-8 encode error: {}", e))
+    pub fn to_string(&self) -> String {
+        match self {
+            ObjectKind::String(s) => s.clone(),
+            ObjectKind::Function(f) => format!("<fn {}>", f.name),
+        }
     }
 }
 

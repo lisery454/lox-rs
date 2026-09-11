@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::{File, OpenOptions},
     io,
 };
@@ -13,6 +14,7 @@ pub struct CallFrame {
     pub chunk: Chunk,
     pub ip: usize,
     pub stack_base: usize,
+    pub name: String,
 }
 
 pub struct VM<W: Write> {
@@ -64,8 +66,9 @@ impl<W: Write> VM<W> {
     }
 
     pub fn interpret(&mut self, function: Function) -> Result<()> {
-        // 克隆 chunk 供 frame 使用，函数对象本身放到堆上
+        // 克隆 chunk 与名字供 frame 使用，函数对象本身放到堆上
         let chunk = function.chunk.clone();
+        let name = function.name.clone();
         let addr = self.memory.alloc(ObjectKind::Function(function));
         self.memory.stack_push(Value::Object(addr));
 
@@ -73,6 +76,7 @@ impl<W: Write> VM<W> {
             chunk,
             ip: 0,
             stack_base: 0,
+            name,
         };
         self.frames.push(frame);
         self.run()
@@ -131,11 +135,11 @@ impl<W: Write> VM<W> {
         };
 
         // 取出函数信息后立即结束对 memory 的借用
-        let (chunk, arity) = {
+        let (chunk, arity, name) = {
             let Some(ObjectKind::Function(func)) = self.memory.get_obj(addr) else {
                 bail!("can only call functions and classes");
             };
-            (func.chunk.clone(), func.arity)
+            (func.chunk.clone(), func.arity, func.name.clone())
         };
 
         if arity != arg_count {
@@ -146,6 +150,7 @@ impl<W: Write> VM<W> {
             chunk,
             ip: 0,
             stack_base: callee_idx,
+            name,
         });
         Ok(())
     }
@@ -402,52 +407,95 @@ impl<W: Write> VM<W> {
     }
 }
 
-impl<W: Write> std::fmt::Display for VM<W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut builder = Builder::new();
-        if let Some(frame) = self.frames.last() {
-            builder.push_column([
-                "chunk".to_string(),
-                format!("{}", frame.chunk.with_ip(frame.ip as i32)),
-            ]);
+impl<W: Write> VM<W> {
+    /// 把 Value 转成可读字符串，对象类型会解析出真实内容（如 `<fn name>`）
+    fn value_str(&self, v: &Value) -> String {
+        match v {
+            Value::Object(addr) => match self.memory.get_obj(*addr) {
+                Some(kind) => kind.to_string(),
+                None => format!("<addr:{}>", *addr),
+            },
+            _ => v.to_string(),
         }
+    }
 
-        let stack_str = self
-            .memory
+    /// 完整调用栈：每个 frame 显示序号、函数名、ip、栈基址与反汇编
+    fn frames_str(&self) -> String {
+        self.frames
+            .iter()
+            .enumerate()
+            .map(|(i, frame)| {
+                format!(
+                    "[{}] <fn {}> ip={} stack_base={}\n{}",
+                    i,
+                    frame.name,
+                    frame.ip,
+                    frame.stack_base,
+                    frame.chunk.with_ip(frame.ip as i32)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    /// 栈内容，并在每个 frame 的栈基址处标注调用边界
+    fn stack_str(&self) -> String {
+        let boundaries: HashMap<usize, usize> = self
+            .frames
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.stack_base, i))
+            .collect();
+
+        self.memory
             .stack
             .iter()
-            .map(|ele| ele.to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
-        builder.push_column(["stack".to_string(), format!("{}", stack_str)]);
+            .enumerate()
+            .map(|(i, v)| {
+                let mut line = format!("[{:03}] {}", i, self.value_str(v));
+                if let Some(&fi) = boundaries.get(&i) {
+                    line.push_str(&format!("  <-- frame {fi}"));
+                }
+                line
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
-        let global_str = self
-            .memory
+    fn heap_str(&self) -> String {
+        self.memory
             .heap
             .iter()
             .enumerate()
             .map(|(addr, ele)| match ele {
                 Some(o) => {
-                    let s = match o.kind.to_string() {
-                        Ok(m) => m,
-                        Err(_) => "<err>".to_string(),
-                    };
+                    let s = o.kind.to_string();
                     format!("[{addr}]: {}", s)
                 }
                 None => format!("[{addr}]: <Nil>"),
             })
-            .collect::<Vec<String>>()
-            .join("\n");
-        builder.push_column(["heap".to_string(), format!("{}", global_str)]);
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
-        let global_str = self
-            .memory
+    fn globals_str(&self) -> String {
+        self.memory
             .globals
             .iter()
-            .map(|ele| format!("{}: {}", ele.0, ele.1))
-            .collect::<Vec<String>>()
-            .join("\n");
-        builder.push_column(["globals".to_string(), format!("{}", global_str)]);
+            .map(|(k, v)| format!("{k}: {}", self.value_str(v)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+impl<W: Write> std::fmt::Display for VM<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut builder = Builder::new();
+
+        builder.push_column(["frames".to_string(), self.frames_str()]);
+        builder.push_column(["stack".to_string(), self.stack_str()]);
+        builder.push_column(["heap".to_string(), self.heap_str()]);
+        builder.push_column(["globals".to_string(), self.globals_str()]);
 
         let table = builder.build().with(Style::modern_rounded()).to_string();
 
