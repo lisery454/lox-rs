@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/lox-compiler",
     "crates/lox-compiler-new",
     "crates/lox-interpreter",
 ]
